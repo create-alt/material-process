@@ -154,6 +154,14 @@ details canvas { display: block; width: 100%; height: auto; margin-top: 6px; bor
 .sel-box { font-size: 11.5px; line-height: 1.6; color: #d1ded6; background: rgba(244, 162, 97, 0.1); border: 1px solid rgba(244, 162, 97, 0.25); border-radius: var(--radius-sm); padding: 8px 10px; }
 .sel-box b { color: #ffd2ad; }
 
+/* competition */
+.comp-box { display: flex; flex-direction: column; gap: 6px; background: rgba(0, 0, 0, 0.2); border-radius: var(--radius-sm); padding: 8px 10px; }
+.comp-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(255,255,255,0.1); }
+.comp-sq { background: linear-gradient(90deg, #e76f51, #f4a261); transition: width 0.4s; }
+.comp-crow { background: linear-gradient(90deg, #4a4e69, #22223b); transition: width 0.4s; }
+.comp-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+.comp-legend b { color: var(--text-main); font-variant-numeric: tabular-nums; }
+
 /* parameter panel */
 .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .preset-btn {
@@ -240,7 +248,8 @@ input[type=range] { width: 100%; accent-color: #2a9d8f; height: 16px; cursor: po
   .top-controls .control-group > label { display: none; }
   .side-panel, .param-panel { top: 166px; left: 12px; right: 12px; width: auto; max-height: calc(100vh - 250px); }
   .action-bar { gap: 4px; padding: 6px 8px; bottom: 12px; }
-  .action-btn, .action-btn.small { padding: 8px 10px; }
+  .action-btn, .action-btn.small { padding: 7px 8px; }
+  .action-btn .btn-icon { font-size: 16px; }
   .action-btn .btn-text { display: none; }
   .bar-sep { display: none; }
   .hint-banner { display: none; }
@@ -324,6 +333,12 @@ input[type=range] { width: 100%; accent-color: #2a9d8f; height: 16px; cursor: po
         <div class="stat-label"><span>🌰 平均満腹度</span><b id="kHunger">–</b></div>
         <div class="meter-bar"><div class="meter-fill" id="hungerBar" style="width: 0%"></div></div>
       </div>
+      <div class="comp-box">
+        <div class="stat-label"><span>🌰 奪い合い</span><b id="kCrows">–</b></div>
+        <div class="comp-bar"><div class="comp-sq" id="compSq"></div><div class="comp-crow" id="compCrow"></div></div>
+        <div class="comp-legend"><span>🐿️ リス <b id="kSqAc">0</b> 個</span><span>🐦‍⬛ カラス <b id="kCrowAc">0</b> 個</span></div>
+        <div class="comp-legend"><span>😣 横取りされた <b id="kSteal">0</b> 回</span><span>🛡️ 追い払った <b id="kRepel">0</b> 回</span></div>
+      </div>
       <div class="mood-box" id="moodBox">🌲 森のリスたちを観察中…</div>
       <details open>
         <summary>最近接個体の相対位置 (ξ, η)</summary>
@@ -352,12 +367,13 @@ input[type=range] { width: 100%; accent-color: #2a9d8f; height: 16px; cursor: po
       <div id="sliderMount"></div>
     </aside>
 
-    <div class="hint-banner" id="hintBanner">💡 地面クリック: どんぐりを撒く ／ リスをクリック: 個体を選択 ／ ドラッグ: 視点回転</div>
+    <div class="hint-banner" id="hintBanner">💡 地面クリック: どんぐりを撒く ／ リスをクリック: 個体を選択 ／ 🐦‍⬛ カラスと奪い合い中</div>
 
     <div class="action-bar">
       <button class="action-btn primary" id="btnFeed" title="群れの近くにどんぐりを撒く"><span class="btn-icon">🌰</span><span class="btn-text">どんぐりを撒く</span></button>
       <button class="action-btn" id="btnGoal" title="次に地面をクリックした地点を群れの目的地（移動衝動）にする"><span class="btn-icon">🎯</span><span class="btn-text">目的地</span></button>
       <button class="action-btn" id="btnHawk" title="天敵のタカが上空に現れる"><span class="btn-icon">🦅</span><span class="btn-text">天敵 (タカ)</span></button>
+      <button class="action-btn" id="btnCrow" title="どんぐりを奪い合う競争相手のカラスを出す / 帰す"><span class="btn-icon">🐦‍⬛</span><span class="btn-text">カラス</span></button>
       <button class="action-btn" id="btnStartle" title="群れを驚かせて散開させる"><span class="btn-icon">💥</span><span class="btn-text">驚かす</span></button>
       <button class="action-btn" id="btnReset" title="群れを初期配置に戻す"><span class="btn-icon">🔄</span><span class="btn-text">リセット</span></button>
       <span class="bar-sep"></span>
@@ -439,6 +455,11 @@ const P = {
   maxAccel: 3.2,   // 最大加速度 m/s^2
   arbitration: 'priority', // 'priority' = 優先度付き加速度割当 / 'average' = 加重平均
   pauses: true,    // 間欠移動（立ち止まって採餌・警戒）
+  // --- 競争（カラス） ---
+  crowCount: 3,     // カラスの数
+  acornRate: 8,     // どんぐりの自然落下（個/分）
+  mobbing: true,    // 仲間が集まればカラスを取り囲んで追い払う
+  mobThreshold: 3,  // 追い払いに必要なリスの数（自分を含む、1.5 m 以内）
   // --- 可視化 ---
   showLinks: false, showVel: false, showRange: true, showTrails: false,
 };
@@ -541,6 +562,21 @@ const Sound = new (class {
     for (let i = 0; i < 3; i++) {
       const t = now + i * 0.11, o = this._osc('triangle', 2900, t, 0.08, 0.1);
       o.frequency.linearRampToValueAtTime(3700, t + 0.03); o.frequency.linearRampToValueAtTime(2300, t + 0.07);
+    }
+  }
+  /** カラスの「カァー カァー」 */
+  caw() {
+    if (!this.enabled || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - (this.lastCaw || 0) < 0.6) return;
+    this.lastCaw = now;
+    for (let i = 0; i < 2; i++) {
+      const t = now + i * 0.38;
+      const o = this.ctx.createOscillator(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(640, t); o.frequency.linearRampToValueAtTime(470, t + 0.28);
+      f.type = 'bandpass'; f.frequency.value = 1300; f.Q.value = 2.5;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.14, t + 0.03); g.gain.exponentialRampToValueAtTime(1e-3, t + 0.3);
+      o.connect(f); f.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.32);
     }
   }
   hawkScreech() {
@@ -1219,11 +1255,21 @@ class AcornSystem {
     return a;
   }
   /** 半径 maxDist 内で、まだ誰も確保していない一番近いどんぐり */
-  nearestAvailable(x, z, maxDist, who) {
+  /** 木から自然に落ちるどんぐり */
+  drop(target) {
+    const start = new THREE.Vector3(target.x, heightAt(target.x, target.z) + rnd(4, 7), target.z);
+    const a = new Acorn(start, new THREE.Vector3(rnd(-0.3, 0.3), 0, rnd(-0.3, 0.3)), this.forest);
+    this.scene.add(a.mesh);
+    this.acorns.push(a);
+    return a;
+  }
+  get onGround() { return this.acorns.filter((a) => !a.isAttached && !a.isEaten).length; }
+  nearestAvailable(x, z, maxDist, who, accept = null) {
     let best = null, bd = maxDist;
     for (const a of this.acorns) {
       if (a.isEaten || a.isAttached) continue;
       if (a.claimedBy && a.claimedBy !== who) continue;
+      if (accept && !accept(a)) continue;
       const d = Math.hypot(a.mesh.position.x - x, a.mesh.position.z - z);
       if (d < bd) { bd = d; best = a; }
     }
@@ -1362,6 +1408,336 @@ class Hawk {
 }
 
 /* =====================================================================
+ * 9b. 競争相手: カラス（ハシブトガラス）
+ *     天敵ではなく、同じどんぐりと場所を奪い合う「競争者」。
+ *     ・消費型競争  : 落ちたどんぐりを先に見つけた方が食べる（カラスは広く見渡し、飛んで先回りする）
+ *     ・干渉型競争  : 食べているリスからどんぐりを横取りする（労働寄生 kleptoparasitism）
+ *     ・集団での防衛: 近くに仲間が mobThreshold 匹以上いるリスは、カラスを取り囲んで威嚇（モビング）し、
+ *                     カラスは追い払われる。1 匹だけのリスはカラスに譲って逃げる
+ *     カラス同士も、リスとは別のパラメータ（大きな分離距離・飛行中だけの整列）を持つボイドとして動く
+ * ===================================================================== */
+const CROW = { walk: 0.9, fly: 3.6, flyH: 2.4, vision: 7, accel: 4.5, sep: 0.9 };
+
+class Crow {
+  constructor(id, scene) {
+    this.id = id;
+    this.scene = scene;
+    this.group = this.makeMesh();
+    scene.add(this.group);
+    const a = rnd(0, TAU);
+    this.x = Math.cos(a) * 15; this.z = Math.sin(a) * 15; this.y = heightAt(this.x, this.z) + 4;
+    this.vx = 0; this.vz = 0; this.vy = 0; this.heading = Math.atan2(-this.x, -this.z); this.bank = 0;
+    this.state = 'fly'; this.stateTime = 0; this.t = rnd(0, 10);
+    this.dest = this.pickArenaPoint(); this.leaving = false; this.awayTimer = 0;
+    this.hunger = rnd(10, 40);   // 満腹度 (%)
+    this.food = null;            // 狙っている落ちたどんぐり
+    this.victim = null;          // 横取りを狙うリス
+    this.acorn = null;           // くわえているどんぐり
+    this.eatTimer = 0; this.mobbers = 0; this.giveUp = 0; this.wanderAng = 0; this.walkPhase = 0;
+    this.eaten = 0;
+  }
+
+  makeMesh() {
+    const g = new THREE.Group();
+    const black = new THREE.MeshStandardMaterial({ color: 0x17181e, roughness: 0.36, metalness: 0.25 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), black);
+    body.scale.set(0.82, 0.8, 1.6); body.position.set(0, 0.17, 0); body.rotation.x = -0.25;
+    const head = new THREE.Group(); head.position.set(0, 0.24, 0.13);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.062, 14, 12), black); skull.scale.set(0.9, 0.95, 1.05);
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.1, 10), dark); beak.rotation.x = Math.PI / 2; beak.position.set(0, -0.006, 0.09);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.1, metalness: 0.4 });
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), eyeMat); eyeL.position.set(0.042, 0.016, 0.03);
+    const eyeR = eyeL.clone(); eyeR.position.x = -0.042;
+    this.beak = new THREE.Object3D(); this.beak.position.set(0, -0.03, 0.1);
+    head.add(skull, beak, eyeL, eyeR, this.beak);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.17), black); tail.position.set(0, 0.15, -0.21); tail.rotation.x = -0.2;
+    const foldGeo = new THREE.SphereGeometry(0.1, 12, 8);
+    const foldL = new THREE.Mesh(foldGeo, black); foldL.scale.set(0.35, 0.7, 1.7); foldL.position.set(0.068, 0.19, -0.05);
+    const foldR = foldL.clone(); foldR.position.x = -0.068;
+    const wingShape = (s) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0.09), new THREE.Vector3(0, 0, -0.09), new THREE.Vector3(s * 0.25, 0, -0.14),
+        new THREE.Vector3(s * 0.5, 0, -0.1), new THREE.Vector3(s * 0.46, 0, 0.03), new THREE.Vector3(s * 0.22, 0, 0.09)]);
+      geo.setIndex([0, 1, 2, 0, 2, 5, 5, 2, 3, 5, 3, 4]);
+      geo.computeVertexNormals();
+      return geo;
+    };
+    const wingL = new THREE.Group(), wingR = new THREE.Group();
+    wingL.add(new THREE.Mesh(wingShape(1), dark)); wingR.add(new THREE.Mesh(wingShape(-1), dark));
+    wingL.position.set(0.05, 0.21, 0.01); wingR.position.set(-0.05, 0.21, 0.01);
+    const spread = new THREE.Group(); spread.add(wingL, wingR); spread.visible = false;
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x101010, roughness: 0.6 });
+    const makeLeg = (x) => {
+      const leg = new THREE.Group(); leg.position.set(x, 0.11, 0.0);
+      const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.11, 6), legMat); shank.position.y = -0.055;
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.006, 0.055), legMat); foot.position.set(0, -0.108, 0.012);
+      leg.add(shank, foot);
+      return leg;
+    };
+    const legL = makeLeg(0.032), legR = makeLeg(-0.032);
+    // 威嚇されている度合いを示す足元のリング
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.34, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x83e0d2, transparent: true, opacity: 0, depthWrite: false }));
+    ring.position.y = 0.02;
+    g.add(body, head, tail, foldL, foldR, spread, legL, legR);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    g.add(ring);
+    g.scale.setScalar(1.15);
+    this.parts = { head, wingL, wingR, spread, foldL, foldR, legL, legR, ring };
+    return g;
+  }
+
+  get grounded() { return this.state === 'walk' || this.state === 'eat'; }
+  get speed() { return Math.hypot(this.vx, this.vz); }
+
+  pickArenaPoint() {
+    const a = rnd(0, TAU), r = Math.sqrt(rand()) * (WORLD_R - 1.5);
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r };
+  }
+  takeOff(dest, leaving) {
+    this.releaseTarget();
+    this.state = 'fly'; this.stateTime = 0; this.dest = dest; this.leaving = leaving;
+  }
+  releaseTarget() {
+    if (this.food && this.food.claimedBy === this) this.food.claimedBy = null;
+    this.food = null; this.victim = null;
+  }
+  dropAcorn() {
+    const a = this.acorn;
+    if (!a) return;
+    a.isAttached = false; a.attachBone = null; a.isSettled = false; a.claimedBy = null;
+    a.velocity.set(rnd(-0.6, 0.6), 0.8, rnd(-0.6, 0.6));
+    this.acorn = null;
+  }
+  /** 森の外へ退く（追い払われた / 満腹になった） */
+  retreat(w, mobbed) {
+    this.dropAcorn();
+    // 威嚇してくるリスたちと反対側の森の外へ
+    let cx = 0, cz = 0, n = 0;
+    for (const s of w.squirrels) if (s.mob === this) { cx += s.x; cz += s.z; n++; }
+    const a = n ? Math.atan2(this.z - cz / n, this.x - cx / n) + rnd(-0.5, 0.5) : rnd(0, TAU);
+    this.takeOff({ x: Math.cos(a) * 14, z: Math.sin(a) * 14 }, true);
+    this.vy = 2.5;
+    Sound.caw();
+    if (mobbed) {
+      w.comp.repels++;
+      w.fx.pulse(this.x, this.z, 0x83e0d2);
+      w.notify(`🛡️ リス ${this.mobbers} 匹が取り囲んで威嚇し、カラスを追い払いました！ 落としたどんぐりはリスのものに。`);
+    }
+  }
+  /** 食べているリスからどんぐりを横取りする */
+  steal(v, w) {
+    const a = v.acorn;
+    if (!a) return;
+    v.acorn = null; v.robbed++;
+    v.setState(ST.IDLE);
+    v.startle = 1.0; v.fleeFrom = { x: this.x, z: this.z };
+    a.attachBone = this.beak; a.claimedBy = this; a.isAttached = true;
+    this.acorn = a; this.victim = null;
+    this.state = 'eat'; this.stateTime = 0; this.eatTimer = rnd(2.5, 3.5);
+    w.comp.steals++;
+    Sound.caw();
+    w.notify(`🐦‍⬛ カラスが #${String(v.id + 1).padStart(2, '0')} のどんぐりを横取り！ 近くに仲間が少ないリスは狙われやすい。`);
+  }
+
+  /** 目標地点への操舵加速度 (m/s²) */
+  steer(dx, dz, d, speed, arrive) {
+    const s = speed * Math.min(1, d / arrive), k = 1 / (d || 1);
+    return { x: (dx * k * s - this.vx) * 3, z: (dz * k * s - this.vz) * 3 };
+  }
+  /** steer-to-avoid（リスと同じ考え方の簡易版）: 進路をふさぐ幹・岩の横へ舵を切る */
+  avoid(forest, look) {
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading), rx = -fz, rz = fx;
+    let best = null, bz = look;
+    for (const o of forest.obstacles) {
+      if (this.state === 'fly' && o.kind !== 'tree') continue; // 飛行中は幹だけが障害物
+      const ox = o.x - this.x, oz = o.z - this.z, lz = ox * fx + oz * fz;
+      if (lz < 0 || lz - o.r > bz) continue;
+      const lx = ox * rx + oz * rz;
+      if (Math.abs(lx) > o.r + 0.25) continue;
+      bz = Math.max(0, lz - o.r); best = lx;
+    }
+    if (best === null) return { x: 0, z: 0 };
+    const side = best > 0 ? -1 : 1, u = 1 - bz / look;
+    return { x: rx * side * 3 * u, z: rz * side * 3 * u };
+  }
+  /** カラス同士のボイド規則（分離・結合、飛行中は整列も） */
+  flock(crows, flying) {
+    let sx = 0, sz = 0, cx = 0, cz = 0, ax = 0, az = 0, n = 0;
+    for (const c of crows) {
+      if (c === this || c.state === 'away') continue;
+      const dx = c.x - this.x, dz = c.z - this.z, d = Math.hypot(dx, dz);
+      if (d < CROW.sep && d > 1e-4) { const k = (CROW.sep - d) / d; sx -= dx * k; sz -= dz * k; }
+      if (d < 4) { cx += dx; cz += dz; ax += c.vx; az += c.vz; n++; }
+    }
+    const out = { x: sx * 4, z: sz * 4 };
+    if (n) {
+      out.x += (cx / n) * 0.15; out.z += (cz / n) * 0.15;
+      if (flying) { out.x += (ax / n - this.vx) * 0.8; out.z += (az / n - this.vz) * 0.8; }
+    }
+    return out;
+  }
+  integrate(dt, ax, az, vmax, amax) {
+    const am = Math.hypot(ax, az);
+    if (am > amax) { ax *= amax / am; az *= amax / am; }
+    this.vx += ax * dt; this.vz += az * dt;
+    const sp = this.speed;
+    if (sp > vmax) { this.vx *= vmax / sp; this.vz *= vmax / sp; }
+    this.x += this.vx * dt; this.z += this.vz * dt;
+    if (sp > 0.05) {
+      const prev = this.heading;
+      this.heading = wrapAngle(this.heading + wrapAngle(Math.atan2(this.vx, this.vz) - this.heading) * Math.min(1, dt * 8));
+      const omega = wrapAngle(this.heading - prev) / Math.max(dt, 1e-4);
+      this.bank += (clamp(Math.atan2(sp * omega, 9.8), -0.7, 0.7) - this.bank) * Math.min(1, dt * 4);
+    }
+  }
+
+  update(dt, w) {
+    const { squirrels, acorns, forest } = w;
+    this.t += dt; this.stateTime += dt;
+    this.hunger = Math.max(0, this.hunger - dt * 0.5);
+    let ax = 0, az = 0;
+
+    if (this.state === 'away') {
+      // 森の外で休む。お腹がすいたら戻ってくる
+      this.vx = this.vz = 0;
+      this.awayTimer -= dt;
+      if (this.awayTimer <= 0 && this.hunger < 60) this.takeOff(this.pickArenaPoint(), false);
+      return;
+    }
+
+    if (this.state === 'fly') {
+      const dx = this.dest.x - this.x, dz = this.dest.z - this.z, d = Math.hypot(dx, dz);
+      const s = this.steer(dx, dz, d, CROW.fly, 2.5);
+      const av = this.avoid(forest, 2.2), fl = this.flock(w.crows, true);
+      ax = s.x + av.x * 2 + fl.x; az = s.z + av.z * 2 + fl.z;
+      const ground = heightAt(this.x, this.z);
+      const targetY = d < 2.0 ? ground : ground + CROW.flyH + Math.sin(this.t * 0.8 + this.id) * 0.3;
+      this.vy += ((targetY - this.y) * 3 - this.vy * 2.4) * dt;
+      this.y = Math.max(ground, this.y + this.vy * dt);
+      this.integrate(dt, ax, az, CROW.fly, 7);
+      const p = { x: this.x, z: this.z };
+      if (forest.resolveCollision(p, 0.18)) { this.x = p.x; this.z = p.z; }
+      if (d < 0.7 && this.y - ground < 0.12) {
+        this.y = ground; this.vy = 0; this.stateTime = 0;
+        if (this.leaving) { this.state = 'away'; this.awayTimer = rnd(10, 18); }
+        else { this.state = 'walk'; if (rand() < 0.5) Sound.caw(); }
+      }
+      return;
+    }
+
+    // ---- 地上（歩く / 食べる） ----
+    this.y = heightAt(this.x, this.z);
+    // 周りで威嚇しているリスの数（集団の力）
+    this.mobbers = 0;
+    for (const s of squirrels) if (s.mob === this && Math.hypot(s.x - this.x, s.z - this.z) < 1.0) this.mobbers++;
+    if (P.mobbing && this.mobbers >= P.mobThreshold) { this.retreat(w, true); return; }
+
+    if (this.state === 'eat') {
+      this.eatTimer -= dt;
+      if (this.eatTimer <= 0) {
+        if (this.acorn) {
+          this.acorn.isEaten = true; this.acorn.mesh.visible = false; this.acorn = null;
+          this.hunger = Math.min(100, this.hunger + 40); this.eaten++; w.comp.crow++;
+        }
+        this.state = 'walk'; this.stateTime = 0;
+      }
+      this.integrate(dt, -this.vx * 8, -this.vz * 8, CROW.walk, 20);
+      return;
+    }
+    if (this.hunger > 85) { this.retreat(w, false); return; } // 満腹になったら森の外へ
+
+    // 餌の選択: 落ちているどんぐり > 食べているリスからの横取り
+    if (!this.food || this.food.isEaten || this.food.isAttached || (this.food.claimedBy && this.food.claimedBy !== this)) {
+      this.food = acorns.nearestAvailable(this.x, this.z, CROW.vision, this);
+    }
+    if (this.giveUp > 0) this.giveUp -= dt;
+    if (!this.food && this.hunger < 75 && this.giveUp <= 0) {
+      if (!this.victim || this.victim.state !== ST.EAT || !this.victim.acorn || this.victim.climb) {
+        let best = null, bd = CROW.vision;
+        for (const s of squirrels) {
+          if (s.state !== ST.EAT || !s.acorn || s.climb) continue;
+          const d = Math.hypot(s.x - this.x, s.z - this.z);
+          if (d < bd) { bd = d; best = s; }
+        }
+        this.victim = best;
+      }
+    } else this.victim = null;
+
+    const tgt = this.food ? this.food.mesh.position : this.victim;
+    if (tgt) {
+      const dx = tgt.x - this.x, dz = tgt.z - this.z, d = Math.hypot(dx, dz);
+      if (d > 4.5) { this.takeOff({ x: tgt.x - dx / d * 0.6, z: tgt.z - dz / d * 0.6 }, false); return; } // 遠ければ飛んで先回り
+      const s = this.steer(dx, dz, d, CROW.walk * (d > 1.5 ? 1.5 : 1), 0.35);
+      ax += s.x; az += s.z;
+      if (this.food) {
+        if (d < 1.0) this.food.claimedBy = this;
+        if (d < 0.24 && this.food.isSettled) {
+          const a = this.food;
+          a.isAttached = true; a.attachBone = this.beak; a.claimedBy = this;
+          this.acorn = a; this.food = null;
+          this.state = 'eat'; this.stateTime = 0; this.eatTimer = rnd(2.5, 3.5);
+          return;
+        }
+      } else if (d < 0.5) {
+        // 横取りを試みる。被害者の周りに仲間が多ければ手を出せない
+        const v = this.victim;
+        let support = 1;
+        for (const s of squirrels) if (s !== v && !s.climb && Math.hypot(s.x - v.x, s.z - v.z) < 1.2) support++;
+        if (P.mobbing && support >= P.mobThreshold) { this.giveUp = rnd(2, 4); this.victim = null; }
+        else if (rand() < dt * 1.8) { this.steal(v, w); return; }
+      }
+    } else {
+      // 地面をつつきながらゆっくり歩き回る
+      this.wanderAng = clamp(this.wanderAng + (rand() - 0.5) * dt * 4, -1, 1);
+      const h = this.heading + this.wanderAng;
+      ax += (Math.sin(h) * CROW.walk * 0.5 - this.vx) * 2;
+      az += (Math.cos(h) * CROW.walk * 0.5 - this.vz) * 2;
+    }
+    const av = this.avoid(forest, 0.9), fl = this.flock(w.crows, false);
+    ax += av.x * 2 + fl.x; az += av.z * 2 + fl.z;
+    const r = Math.hypot(this.x, this.z);
+    if (r > WORLD_R - 0.8) { ax -= (this.x / r) * 3; az -= (this.z / r) * 3; }
+    this.integrate(dt, ax, az, CROW.walk * 1.5, CROW.accel);
+    this.bank *= 0.9;
+    const p = { x: this.x, z: this.z };
+    forest.resolveCollision(p, 0.16);
+    this.x = p.x; this.z = p.z;
+  }
+
+  animate(dt) {
+    const g = this.group, m = this.parts;
+    g.visible = this.state !== 'away';
+    const ground = heightAt(this.x, this.z);
+    const flying = this.state === 'fly' && this.y - ground > 0.06;
+    const sp = this.speed;
+    g.position.set(this.x, this.y, this.z);
+    g.rotation.set(flying ? clamp(-this.vy * 0.25, -0.5, 0.5) : 0, this.heading, flying ? -this.bank : 0, 'YXZ');
+    m.spread.visible = flying; m.foldL.visible = m.foldR.visible = !flying;
+    if (flying) {
+      const f = Math.sin(this.t * 13) * 0.8;
+      m.wingL.rotation.z = f; m.wingR.rotation.z = -f;
+      m.legL.rotation.x = m.legR.rotation.x = 1.1;
+      m.head.rotation.x = 0; m.head.position.z = 0.13;
+    } else {
+      // 歩行: 左右の脚を交互に出し、首を前後に振る（カラス特有の歩き方）
+      this.walkPhase += dt * (4 + sp * 12);
+      const s = Math.sin(this.walkPhase), amp = Math.min(1, sp * 2);
+      m.legL.rotation.x = s * 0.5 * amp; m.legR.rotation.x = -s * 0.5 * amp;
+      m.head.position.z = 0.13 + Math.sin(this.walkPhase * 2) * 0.015 * amp;
+      if (this.state === 'eat') m.head.rotation.x = 0.55 + Math.max(0, Math.sin(this.t * 14)) * 0.45; // つついて食べる
+      else m.head.rotation.x = 0.15 + (sp < 0.1 ? Math.max(0, Math.sin(this.t * 3)) * 0.6 : 0);
+      // 威嚇されると翼を半開きにして身構える
+      const threat = this.mobbers > 0 ? 0.35 + Math.sin(this.t * 10) * 0.1 : 0;
+      m.foldL.rotation.z = threat; m.foldR.rotation.z = -threat;
+    }
+    m.ring.material.opacity = this.grounded && this.mobbers > 0 ? Math.min(0.9, (this.mobbers / Math.max(1, P.mobThreshold)) * 0.8) : 0;
+  }
+
+  dispose() { this.dropAcorn(); this.releaseTarget(); this.scene.remove(this.group); }
+}
+
+/* =====================================================================
  * 10. リス = ボイド (boid)
  *     ・知覚 (perceive)      : 半径・視野角・感度で局所的な近傍を選ぶ
  *     ・行動 (behaviors)     : 各行動は「その方向に加速したい」という要求を出す
@@ -1370,11 +1746,11 @@ class Hawk {
  *     ・身体 (animate)       : 骨格ポーズ・尻尾の物理・跳躍（単独リス版を継承）
  * ===================================================================== */
 const ST = {
-  IDLE: 'idle', HOP: 'hop', ALERT: 'alert', SNIFF: 'sniff', EAT: 'eat', GROOM: 'groom', CLIMB: 'climb', FLEE: 'flee',
+  IDLE: 'idle', HOP: 'hop', ALERT: 'alert', MOB: 'mob', SNIFF: 'sniff', EAT: 'eat', GROOM: 'groom', CLIMB: 'climb', FLEE: 'flee',
 };
 const ST_LABEL = {
   idle: '待機 (周囲を観察)', hop: '跳躍移動', alert: '警戒立ち', sniff: '匂い嗅ぎ (採餌)', eat: 'どんぐりを食べる',
-  groom: '毛づくろい', climb: '木に避難', flee: '逃走',
+  groom: '毛づくろい', climb: '木に避難', flee: '逃走', mob: '威嚇 (カラスを取り囲む)',
 };
 const _tmpNb = [];
 
@@ -1394,6 +1770,8 @@ class Squirrel {
     this.alarm = 0; this.alarmDelay = -1; this.startle = 0; this.fleeFrom = null;
     this.climb = null;
     this.food = null; this.eatTimer = 0; this.acorn = null;
+    this.mob = null;                 // 威嚇しているカラス
+    this.eaten = 0; this.robbed = 0; // 食べた数 / 横取りされた数
     this.wanderAng = rnd(-1, 1);
     this.neighbors = [];
     this.req = {};                    // 最後に計算した加速度要求（可視化用）
@@ -1592,7 +1970,10 @@ class Squirrel {
       this.eatTimer -= dt;
       if (Math.sin(this.stateTime * 22) > 0.92 && rand() < 0.3 && this === world.selected) Sound.crunch();
       if (this.eatTimer <= 0 || this.alarm > 0) {
-        if (this.acorn) { this.acorn.isEaten = true; this.acorn.mesh.visible = false; this.acorn = null; this.hunger = Math.min(100, this.hunger + 35); }
+        if (this.acorn) {
+          this.acorn.isEaten = true; this.acorn.mesh.visible = false; this.acorn = null;
+          this.hunger = Math.min(100, this.hunger + 35); this.eaten++; world.comp.sq++;
+        }
         this.setState(this.alarm > 0 ? ST.FLEE : ST.GROOM);
       }
     } else if (this.state === ST.GROOM) {
@@ -1621,6 +2002,39 @@ class Squirrel {
 
     // --- 知覚 ---
     const nb = this.perceive(world.grid);
+    const busyNow = this.state === ST.EAT || this.state === ST.GROOM;
+
+    // --- 競争相手（カラス）の知覚: 最も近い地上のカラスと、自分の周りの仲間の数 ---
+    let group = 1;                         // 自分を含めて 1.5 m 以内にいる仲間の数
+    for (const n of nb) if (n.d < 1.5) group++;
+    const strong = P.mobbing && group >= P.mobThreshold;
+    let crowNear = null, crowD = 2.6;
+    this.mob = null;
+    if (!busyNow && !alarmed) for (const c of world.crows) {
+      if (!c.grounded) continue;
+      const d = Math.hypot(c.x - this.x, c.z - this.z);
+      if (d < crowD) { crowD = d; crowNear = c; }
+    }
+    let crowReq = null, mobReq = null;
+    if (crowNear) {
+      if (strong) {
+        // 仲間が十分いる → 取り囲んで威嚇（カラスの手前 0.55 m まで詰め寄る）
+        this.mob = crowNear;
+        const dx = this.x - crowNear.x, dz = this.z - crowNear.z, d = Math.hypot(dx, dz) || 1;
+        mobReq = ['mob', this.seek(crowNear.x + (dx / d) * 0.55, crowNear.z + (dz / d) * 0.55, 0.3, P.maxSpeed), 1.0];
+        this.pause = 0;
+        if (rand() < dt * 0.6) { this.earL = this.earR = 0.45; if (this === world.selected) Sound.alarmCall(); }
+      } else {
+        // 1 匹だけなら争わずに譲る（体の大きいカラスから離れる）
+        crowReq = ['yield', this.seek(this.x * 2 - crowNear.x, this.z * 2 - crowNear.z, 0.01, P.maxSpeed), 0.35 + 0.65 * (1 - crowD / 2.6)];
+      }
+    }
+    // どんぐりのそばにカラスがいれば、仲間が少ないときは近づかない（危険を考慮した採餌）
+    const safeFood = (a) => {
+      if (strong) return true;
+      for (const c of world.crows) if (c.grounded && Math.hypot(c.x - a.mesh.position.x, c.z - a.mesh.position.z) < 1.0) return false;
+      return true;
+    };
 
     // --- 各行動の要求（優先度の高い順）と強さ ---
     const req = [];
@@ -1642,12 +2056,13 @@ class Squirrel {
     if (this.startle > 0 && this.fleeFrom) {
       req.push(['flee', this.seek(this.x * 2 - this.fleeFrom.x, this.z * 2 - this.fleeFrom.z, 0.01, P.maxSpeed * 1.4), 1.0]);
     }
+    if (crowReq) req.push(crowReq);
     const social = busy ? 0 : paused ? 0.12 : 1;
     // 採餌: お腹がすいていれば、近くの空いているどんぐりへ（目の前まで来たら混雑より餌を優先）
     let foodReq = null;
     if (!busy && !alarmed && this.hunger < 80) {
       if (!this.food || this.food.isEaten || this.food.isAttached || (this.food.claimedBy && this.food.claimedBy !== this)) {
-        this.food = acorns.nearestAvailable(this.x, this.z, 3.5, this);
+        this.food = acorns.nearestAvailable(this.x, this.z, 3.5, this, safeFood);
       }
       if (this.food) {
         const fp = this.food.mesh.position, d = Math.hypot(fp.x - this.x, fp.z - this.z);
@@ -1659,6 +2074,7 @@ class Squirrel {
     } else if (this.food && this.food.claimedBy === this && !this.food.isAttached) { this.food.claimedBy = null; this.food = null; }
     if (foodReq && foodReq[3]) req.push(foodReq);
     req.push(['sep', this.separation(nb), P.wSep * (busy ? 0.25 : 1)]);
+    if (mobReq) req.push(mobReq);
     if (foodReq && !foodReq[3]) req.push(foodReq);
     req.push(['ali', this.alignment(nb), P.wAli * social]);
     req.push(['coh', this.cohesion(nb), P.wCoh * social * (this.alarm > 0 ? 1.5 : 1)]);
@@ -1678,6 +2094,7 @@ class Squirrel {
       const sp = this.speed;
       if (alarmed && sp > 0.15) this.setState(ST.FLEE);
       else if (sp > 0.14) this.setState(ST.HOP);
+      else if (this.mob) this.setState(ST.MOB);
       else if (paused) this.setState(this.pauseKind);
       else if (alarmed) this.setState(ST.ALERT);
       else if (sp < 0.06) this.setState(ST.IDLE);
@@ -1891,7 +2308,7 @@ class Squirrel {
         b.thighL.rotation.x = b.thighR.rotation.x = 0.2; b.shinL.rotation.x = b.shinR.rotation.x = -0.3;
         break;
       }
-      case ST.ALERT: {
+      case ST.ALERT: case ST.MOB: {
         const e = clamp(t * 3.5, 0, 1);
         b.pelvis.rotation.x = -0.85 * e; b.spine0.rotation.x = 0.45 * e; b.spine1.rotation.x = 0.5 * e; b.spine2.rotation.x = 0.3 * e;
         b.armL.rotation.x = b.armR.rotation.x = -0.7 * e;
@@ -1942,13 +2359,13 @@ class Squirrel {
   /** 尻尾: 各節をバネ・ダンパで目標角へ追従させる二次系（単独リス版を継承） */
   updateTail(dt) {
     const t = this.stateTime + this.id;
-    const upright = this.state === ST.ALERT || this.state === ST.EAT || this.state === ST.GROOM;
+    const upright = this.state === ST.ALERT || this.state === ST.MOB || this.state === ST.EAT || this.state === ST.GROOM;
     const moving = this.state === ST.HOP || this.state === ST.FLEE || this.state === ST.CLIMB;
     const base = upright ? 1.1 : moving ? 0.4 : 0.85;
     const sway = Math.sin(t * 3.5) * 0.08 + Math.cos(t * 2.1) * 0.05;
     const side = Math.sin(t * 1.8) * (upright ? 0.2 : 0.08) - this.bank * 1.5;
     // 警戒中は尻尾を激しく振る（リスの警戒シグナル "tail flagging"）
-    const flag = this.alarm > 0 && !moving ? Math.sin(t * 18) * 0.35 : 0;
+    const flag = (this.alarm > 0 || this.mob) && !moving ? Math.sin(t * 18) * 0.35 : 0;
     const n = this.tail.length;
     for (let i = 0; i < n; i++) {
       const s = this.tail[i], f = (i + 1) / n;
@@ -2160,6 +2577,7 @@ class Analytics {
     const N = ground.length, st = this.stats;
     st.alarmed = sq.filter((s) => s.alarm > 0 || s.climb).length;
     st.eating = sq.filter((s) => s.state === ST.EAT).length;
+    st.mobbing = sq.filter((s) => s.mob).length;
     st.hunger = sq.reduce((a, s) => a + s.hunger, 0) / Math.max(1, sq.length);
     if (N === 0) { st.phi = 0; st.local = 0; st.nn = 0; st.speed = 0; st.clusters = 0; return; }
     // 分極度（動いている個体）
@@ -2351,6 +2769,11 @@ const SLIDERS = [
   { key: 'maxAccel', label: '最大加速度', min: 0.5, max: 8, step: 0.1, unit: ' m/s²' },
   { seg: 'arbitration', label: '行動の調停', options: [['priority', '優先度割当'], ['average', '加重平均']] },
   { chips: [['pauses', '⏸ 間欠移動'], ['leaders', '👑 先導の階層']] },
+  { section: '競争 (カラス)', note: '餌と場所の奪い合い' },
+  { key: 'crowCount', label: 'カラスの数', min: 0, max: 8, step: 1, unit: ' 羽' },
+  { key: 'acornRate', label: 'どんぐりの自然落下', min: 0, max: 30, step: 1, unit: ' 個/分' },
+  { chips: [['mobbing', '🛡 群れで追い払う (モビング)']] },
+  { key: 'mobThreshold', label: '追い払いに必要な仲間の数', min: 2, max: 8, step: 1, unit: ' 匹', dep: () => P.mobbing },
   { section: '群れ' },
   { key: 'count', label: '個体数', min: 2, max: 60, step: 1, unit: ' 匹' },
   { section: '可視化' },
@@ -2458,6 +2881,7 @@ class UI {
     document.getElementById('btnGoal').addEventListener('click', () => this.cb.onGoal());
     document.getElementById('btnHawk').addEventListener('click', () => this.cb.onHawk());
     document.getElementById('btnStartle').addEventListener('click', () => this.cb.onStartle());
+    document.getElementById('btnCrow').addEventListener('click', () => this.cb.onCrow());
     document.getElementById('btnReset').addEventListener('click', () => this.cb.onReset());
     const toggle = (btnId, panelId) => {
       const btn = document.getElementById(btnId), panel = document.getElementById(panelId);
@@ -2482,7 +2906,7 @@ class UI {
   }
   mood(text, sec = 4) { this.moodText = text; this.moodUntil = performance.now() + sec * 1000; document.getElementById('moodBox').textContent = text; }
 
-  updateStats(st, N, sel) {
+  updateStats(st, N, sel, comp, crows) {
     const set = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
     set('kN', `${N} 匹`);
     set('kClusters', `${st.clusters}`);
@@ -2497,7 +2921,17 @@ class UI {
 
     // 集団状態の判定
     let label, desc, alert = false;
+    // 競争の記録
+    const total = comp.sq + comp.crow;
+    set('kSqAc', `${comp.sq}`); set('kCrowAc', `${comp.crow}`);
+    set('kSteal', `${comp.steals}`); set('kRepel', `${comp.repels}`);
+    document.getElementById('compSq').style.width = total ? `${(comp.sq / total) * 100}%` : '50%';
+    document.getElementById('compCrow').style.width = total ? `${(comp.crow / total) * 100}%` : '50%';
+    const grounded = crows.filter((c) => c.grounded).length;
+    set('kCrows', crows.length ? `カラス ${crows.length} 羽・地上 ${grounded}` : 'カラスなし');
+
     if (st.alarmed > N * 0.25) { label = '🚨 警戒・避難中'; desc = `🦅 天敵を発見！ 警戒声が群れに伝わり、${st.alarmed} 匹が逃走・木の上へ避難しています。`; alert = true; }
+    else if (st.mobbing >= P.mobThreshold) { label = '🛡️ カラスを群れで威嚇中'; desc = `🛡️ ${st.mobbing} 匹のリスがカラスを取り囲み、尻尾を振って威嚇しています。数がそろえば、体の大きいカラスも退散します。`; alert = true; }
     else if (st.eating > Math.max(2, N * 0.25)) { label = '🌰 採餌中'; desc = `🌰 ${st.eating} 匹がどんぐりを両手で持ってカリカリ食べています。`; }
     else if (P.wSep + P.wAli + P.wCoh < 0.05) { label = '🙈 互いに無関係'; desc = '🍃 それぞれが勝手に歩き回り、立ち止まって匂いを嗅いでいます。群れとしての秩序はありません。'; }
     else if (st.local > 0.82 && st.phi > 0.7) { label = '➡️ 整列した群れ'; desc = '🐿️ 向きをそろえて一斉に移動中。仲間の動きを少し遅れてなぞるように追いかけています。'; }
@@ -2516,6 +2950,7 @@ class UI {
       const lead = sel.leadership > 0.7 ? '先導タイプ' : sel.leadership < 0.3 ? '追従タイプ' : '中間';
       box.innerHTML = `<b>🐿️ #${String(sel.id + 1).padStart(2, '0')}</b> ・ ${ST_LABEL[sel.state] || sel.state}<br>`
         + `満腹度 ${Math.round(sel.hunger)}% ・ 速さ ${sel.speed.toFixed(2)} m/s<br>`
+        + `食べたどんぐり ${sel.eaten} 個 ・ 横取りされた ${sel.robbed} 回<br>`
         + `見えている仲間 ${sel.neighbors.length} 匹 ・ 先導性 ${sel.leadership.toFixed(2)} (${lead})<br>`
         + `<span style="color:#9eb1a6">線の色: <span style="color:#ff8c66">分離</span> / <span style="color:#66ccff">整列</span> / <span style="color:#80ff80">結合</span> / <span style="color:#ff4dff">障害物回避</span></span>`;
     } else box.innerHTML = '🖱️ リスをクリックすると、その個体の知覚範囲（扇形）・分離距離（赤い円）・見えている仲間（線）を表示します。';
@@ -2533,6 +2968,10 @@ class App {
     this.forest = new Forest(this.sm.scene);
     this.acorns = new AcornSystem(this.sm.scene, this.forest);
     this.hawk = new Hawk(this.sm.scene);
+    this.crows = [];
+    this.comp = { sq: 0, crow: 0, steals: 0, repels: 0 }; // 競争の記録
+    this.fallTimer = 0;
+    this.lastCrowCount = P.crowCount || 3;
     this.fx = new FX(this.sm.scene);
     this.analytics = new Analytics();
     this.factory = new SquirrelFactory();
@@ -2560,6 +2999,13 @@ class App {
       },
       onStartle: () => this.startle(),
       onReset: () => this.reset(),
+      onCrow: () => {
+        P.crowCount = P.crowCount > 0 ? 0 : this.lastCrowCount;
+        this.setCrows(P.crowCount); this.ui.refresh();
+        this.ui.mood(P.crowCount > 0
+          ? `🐦‍⬛ カラスが ${P.crowCount} 羽やってきました。どんぐりの奪い合いが始まります。仲間が ${P.mobThreshold} 匹以上集まったリスは、カラスを取り囲んで追い払います。`
+          : '🐦‍⬛ カラスがいなくなりました。', 6);
+      },
     });
     this.initInteraction();
     this.load();
@@ -2601,6 +3047,33 @@ class App {
     rand = mulberry32(1987);
     for (let i = 0; i < n; i++) this.squirrels.push(this.spawnOne(i));
     this.analytics.reset();
+    for (const c of this.crows) c.dispose();
+    this.crows = [];
+    this.setCrows(P.crowCount);
+    Object.assign(this.comp, { sq: 0, crow: 0, steals: 0, repels: 0 });
+  }
+  /** カラスの数を変える（新しいカラスは森の外から飛んでくる） */
+  setCrows(n) {
+    while (this.crows.length < n) this.crows.push(new Crow(this.crows.length, this.sm.scene));
+    while (this.crows.length > n) this.crows.pop().dispose();
+    document.getElementById('btnCrow').classList.toggle('armed', n > 0);
+  }
+  /** 木の下にどんぐりが自然に落ちる（奪い合う資源の供給） */
+  naturalFall(dt) {
+    if (P.acornRate <= 0) return;
+    this.fallTimer += dt;
+    if (this.fallTimer < 60 / P.acornRate) return;
+    this.fallTimer = 0;
+    if (this.acorns.onGround >= 14) return;
+    const trees = this.forest.trees.filter((t) => Math.hypot(t.x, t.z) < WORLD_R);
+    const t = trees[Math.floor(rand() * trees.length)];
+    if (!t) return;
+    const a = rnd(0, TAU), d = t.r + rnd(0.3, 1.8);
+    const p = new THREE.Vector3(t.x + Math.cos(a) * d, 0, t.z + Math.sin(a) * d);
+    this.forest.resolveCollision(p, 0.05);
+    const r = Math.hypot(p.x, p.z);
+    if (r > WORLD_R - 0.3) { p.x *= (WORLD_R - 0.3) / r; p.z *= (WORLD_R - 0.3) / r; }
+    this.acorns.drop(p);
   }
   setCount(n) {
     while (this.squirrels.length < n) this.squirrels.push(this.spawnOne(this.squirrels.length));
@@ -2613,6 +3086,7 @@ class App {
   }
   onParam(key) {
     if (key === 'count') this.setCount(P.count);
+    if (key === 'crowCount') { this.setCrows(P.crowCount); if (P.crowCount > 0) this.lastCrowCount = P.crowCount; }
     if (key === 'preset' || key === 'sepDist' || key === 'delay') this.analytics.reset();
   }
   reset() {
@@ -2704,9 +3178,24 @@ class App {
   step(dt) {
     const sq = this.squirrels;
     this.grid.rebuild(sq, Math.max(P.radius, 0.6));
-    const world = { forest: this.forest, acorns: this.acorns, hawk: this.hawk, goal: this.goal, squirrels: sq, grid: this.grid, fx: this.fx, selected: this.selected, mouse: this.mouse, time: this.time };
+    const world = {
+      forest: this.forest, acorns: this.acorns, hawk: this.hawk, goal: this.goal, squirrels: sq, grid: this.grid, fx: this.fx,
+      selected: this.selected, mouse: this.mouse, time: this.time,
+      crows: this.crows, comp: this.comp, notify: (t) => this.ui.mood(t, 5),
+    };
     for (const s of sq) s.think(dt, world);
     for (const s of sq) s.locomote(dt, this.forest);
+    for (const c of this.crows) c.update(dt, world);
+    // 体の大きいカラスとは重ならない（リスが押しのけられる）
+    for (const c of this.crows) {
+      if (!c.grounded) continue;
+      for (const s of sq) {
+        if (s.climb) continue;
+        const dx = s.x - c.x, dz = s.z - c.z, d = Math.hypot(dx, dz), min = 0.3;
+        if (d < min && d > 1e-6) { s.x = c.x + (dx / d) * min; s.z = c.z + (dz / d) * min; }
+      }
+    }
+    this.naturalFall(dt);
     // 物理的な体の重なりを解消（行動ルールとは別の拘束）
     const minD = BL * 0.55;
     for (const s of sq) {
@@ -2736,12 +3225,13 @@ class App {
     let world = null;
     for (let i = 0; i < n; i++) world = this.step(dt / n);
     for (const s of this.squirrels) s.animate(dt, world);
+    for (const c of this.crows) c.animate(dt);
     this.hawk.update(dt, this.analytics.stats.center, this.squirrels);
     this.acorns.update(dt);
     this.analytics.update(dt, this.squirrels);
     this.fx.update(dt, world);
     this.forest.update(dt, this.time);
-    if ((this.uiTimer = (this.uiTimer || 0) + dt) > 0.25) { this.uiTimer = 0; this.ui.updateStats(this.analytics.stats, this.squirrels.length, this.selected); }
+    if ((this.uiTimer = (this.uiTimer || 0) + dt) > 0.25) { this.uiTimer = 0; this.ui.updateStats(this.analytics.stats, this.squirrels.length, this.selected, this.comp, this.crows); }
     const st = this.analytics.stats, sel = this.selected;
     this.sm.updateCamera(dt, st.center, st.heading, sel ? { pos: new THREE.Vector3(sel.x, sel.y, sel.z), heading: sel.climb ? sel.climb.ang + Math.PI : sel.heading } : null);
     this.sm.render();
