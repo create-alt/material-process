@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>記憶媒体を運ぶロボット</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="梅谷・前・井上・新井（日本ロボット学会誌 2002）の環境添付型記憶媒体の動的配置を、オフィスでの繰り返し搬送として動かして観察するシミュレータ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Zen+Old+Mincho:wght@700&display=swap">
+<style>
+/* Layout: 設計図のようなフロア図を主役に、右に「選んだ記憶装置の中身」、下に推移と再現実験。スマホでは 1 列に積む。 */
+:root {
+  --bg: #eef1f4;
+  --surface: #fbfcfd;
+  --sunken: #e4e8ed;
+  --ink: #16202a;
+  --muted: #56616d;
+  --line: #ccd3db;
+  --wall: #2b3540;
+  --accent: #1f5fae;          /* 知識（移動方向）の矢印・操作 */
+  --accent-ink: #ffffff;
+  --mem: #a8650f;             /* 記憶媒体 */
+  --mem-soft: #f1dfc2;
+  --take: #c2372b;
+  --robot: #16202a;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;   /* 比較グラフの系列 */
+  --ref: #8a939c;
+  --font-display: "Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10161c; --surface: #171f27; --sunken: #0c1116; --ink: #e5ebf1; --muted: #9aa6b2; --line: #2b3641; --wall: #c9d3dd;
+    --accent: #6aa8f2; --accent-ink: #0b1118; --mem: #e3a24b; --mem-soft: #3a2a14; --take: #f07466; --robot: #e5ebf1;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --ref: #7b8794;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10161c; --surface: #171f27; --sunken: #0c1116; --ink: #e5ebf1; --muted: #9aa6b2; --line: #2b3641; --wall: #c9d3dd;
+  --accent: #6aa8f2; --accent-ink: #0b1118; --mem: #e3a24b; --mem-soft: #3a2a14; --take: #f07466; --robot: #e5ebf1;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --ref: #7b8794;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body { margin: 0; font-family: var(--font-body); font-size: 15px; line-height: 1.65; -webkit-text-size-adjust: 100%; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 56px; display: flex; flex-direction: column; gap: 18px; }
+
+/* ---------- ヘッダー ---------- */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 10px 32px; align-items: end; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 4.2vw, 40px); line-height: 1.2; margin: 4px 0 0; letter-spacing: 0.02em; text-wrap: balance; }
+.lede { margin: 6px 0 0; color: var(--muted); max-width: 60ch; }
+.cite { font-size: 12.5px; color: var(--muted); margin: 0; }
+.cite a { color: var(--accent); }
+@media (max-width: 760px) { .top { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- 操作 ---------- */
+.controls { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.ctl { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ctl > .lab { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.ctl > .lab output { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.c-play { grid-column: span 3; } .c-mode { grid-column: span 5; } .c-ratio { grid-column: span 4; }
+.c-speed { grid-column: span 4; } .c-robots { grid-column: span 4; } .c-mem { grid-column: span 4; }
+@media (max-width: 1000px) {
+  .c-play { grid-column: span 12; } .c-mode { grid-column: span 12; } .c-ratio { grid-column: span 12; }
+  .c-speed, .c-robots, .c-mem { grid-column: span 4; }
+}
+@media (max-width: 620px) { .c-speed, .c-robots, .c-mem { grid-column: span 12; } }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+button, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; min-height: 40px; cursor: pointer; touch-action: manipulation; }
+button:hover, select:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; min-width: 96px; }
+.c-play .row button { flex: 1 1 auto; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--sunken); }
+.seg button { flex: 1 1 0; min-width: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 6px; font-size: 13px; white-space: nowrap; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent); font-weight: 700; box-shadow: inset 0 -2px 0 var(--accent); }
+.ratio-row { display: flex; gap: 6px; }
+.ratio-row .seg { flex: 1 1 auto; }
+input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 28px; }
+
+/* ---------- 主部 ---------- */
+.main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card h2 { font-family: var(--font-display); font-size: 18px; margin: 0; letter-spacing: 0.02em; line-height: 1.35; text-wrap: balance; }
+.card .sub { font-size: 12.5px; color: var(--muted); margin: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+
+.mapbox { position: relative; border-radius: 6px; background: var(--sunken); overflow: hidden; }
+.mapbox svg { display: block; width: 100%; height: auto; touch-action: manipulation; }
+.maptools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.maptools label { display: inline-flex; gap: 6px; align-items: center; }
+.maptools select { min-height: 36px; padding: 4px 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; display: inline-block; flex: none; border-radius: 50%; }
+
+aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 621px) and (max-width: 1080px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kpi { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi .v { font-family: var(--font-mono); font-size: 22px; font-weight: 500; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi .v small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.kpi .l { font-size: 11.5px; color: var(--muted); }
+.dev-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.dev-head select { min-height: 36px; padding: 4px 8px; }
+.unitbar { display: flex; gap: 2px; flex-wrap: wrap; }
+.unitbar i { width: 11px; height: 14px; border-radius: 2px; background: var(--sunken); border: 1px solid var(--line); }
+.unitbar i.full { background: var(--mem); border-color: var(--mem); }
+.unitbar i.empty { background: var(--mem-soft); border-color: var(--mem); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; font-size: 12px; color: var(--muted); }
+.stats b { display: block; font-family: var(--font-mono); font-size: 15px; color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tablebox { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface); color: var(--muted); font-weight: 400; z-index: 1; }
+th:first-child, td:first-child { text-align: left; }
+td.mono, .mono { font-family: var(--font-mono); }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--bg); }
+tr.st td { color: var(--ink); }
+tr.nst td { color: var(--muted); }
+tr.sel td { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; }
+.tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 10px; border: 1px solid currentColor; line-height: 1.6; }
+.tag.mem { color: var(--mem); }
+.tag.min { color: var(--take); }
+@media (max-width: 480px) { .c-cbar { display: none; } th, td { padding: 4px 6px; } }
+
+.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 900px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { position: relative; min-width: 0; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; line-height: 1.45; padding: 6px 8px; border-radius: 5px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; font-variant-numeric: tabular-nums; }
+.clegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.clegend span { display: inline-flex; align-items: center; gap: 6px; }
+.clegend i { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+.clegend i.dash { background: repeating-linear-gradient(90deg, var(--ref) 0 4px, transparent 4px 7px) !important; }
+
+.exp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1080px) { .exp { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .exp .wide { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .exp { grid-template-columns: minmax(0, 1fr); } }
+.progress { height: 6px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+.empty { color: var(--muted); font-size: 13px; padding: 18px 4px; text-align: center; border: 1px dashed var(--line); border-radius: 6px; }
+details.table-view summary { font-size: 12.5px; color: var(--muted); cursor: pointer; }
+
+/* ---------- 解説 ---------- */
+.explain { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 36px; border-top: 1px solid var(--line); padding-top: 22px; }
+@media (max-width: 860px) { .explain { grid-template-columns: minmax(0, 1fr); } }
+.explain h2 { font-family: var(--font-display); font-size: 23px; margin: 0 0 6px; letter-spacing: 0.02em; text-wrap: balance; }
+.explain h3 { font-family: var(--font-display); font-size: 17px; margin: 16px 0 4px; }
+.explain p, .explain li { max-width: 64ch; }
+.explain ol, .explain ul { padding-left: 1.3em; margin: 4px 0; display: flex; flex-direction: column; gap: 4px; }
+.formula { font-family: var(--font-mono); font-size: 13.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; overflow-x: auto; white-space: nowrap; }
+.note { font-size: 12.5px; color: var(--muted); }
+details.more { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 8px 12px; margin-top: 10px; }
+details.more summary { font-weight: 700; cursor: pointer; }
+.ptable td:first-child { color: var(--muted); }
+.ptable td { text-align: left; white-space: normal; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Environment-attached storage · knowledge sharing</div>
+      <h1>記憶媒体を運ぶロボット</h1>
+      <p class="lede">ロボットは地図を持たず、通路の要所に貼られた記憶装置から「目的地へはどちらへ進むか」を読み書きします。よく使われる知識を残すために、ロボット自身が記憶媒体を取り外し、必要とされる場所へ運び直します。</p>
+    </div>
+    <p class="cite">梅谷智弘・前泰志・井上健司・新井健生「自律作業ロボット間における知識共有を目指した環境添付型記憶媒体の動的配置」日本ロボット学会誌 20(6), 631–639 (2002).
+      <a href="paper/Umetani2002_EnvironmentAttachedStorage_JRSJ20-6.pdf">論文 PDF</a> ·
+      <a href="https://www.jstage.jst.go.jp/article/jrsj1983/20/6/20_6_631/_article/-char/ja" target="_blank" rel="noopener">J-STAGE</a></p>
+  </header>
+
+  <section class="controls" aria-label="シミュレーションの操作">
+    <div class="ctl c-play">
+      <div class="lab">再生</div>
+      <div class="row">
+        <button id="btnPlay" class="primary" type="button">一時停止</button>
+        <button id="btnStep" type="button">T 進める</button>
+        <button id="btnReset" type="button">最初から</button>
+      </div>
+    </div>
+    <div class="ctl c-mode">
+      <div class="lab">記憶媒体の扱い</div>
+      <div class="seg" id="segMode" role="group" aria-label="記憶媒体の扱い">
+        <button type="button" data-v="proposed" aria-pressed="true">提案手法</button>
+        <button type="button" data-v="uniform" aria-pressed="false">一様に固定</button>
+        <button type="button" data-v="none" aria-pressed="false">知識なし</button>
+        <button type="button" data-v="all" aria-pressed="false">全知識</button>
+      </div>
+    </div>
+    <div class="ctl c-ratio">
+      <div class="lab">作業割合（目的地の出やすさ 5:1）</div>
+      <div class="ratio-row">
+        <div class="seg" id="segRatio" role="group" aria-label="作業割合">
+          <button type="button" data-v="A" aria-pressed="true">(A) A–H</button>
+          <button type="button" data-v="B" aria-pressed="false">(B) Q–Y</button>
+          <button type="button" data-v="U" aria-pressed="false">一様</button>
+        </div>
+      </div>
+    </div>
+    <div class="ctl c-speed">
+      <div class="lab"><label for="rngSpeed">速度</label><output id="outSpeed"></output></div>
+      <input id="rngSpeed" type="range" min="0" max="10" step="1" value="5">
+    </div>
+    <div class="ctl c-robots">
+      <div class="lab"><label for="rngRobots">ロボットの台数</label><output id="outRobots">4 台</output></div>
+      <input id="rngRobots" type="range" min="1" max="12" step="1" value="4">
+    </div>
+    <div class="ctl c-mem">
+      <div class="lab"><label for="rngMem">記憶媒体の総量（全知識に対する割合）</label><output id="outMem">1/2</output></div>
+      <input id="rngMem" type="range" min="1" max="6" step="1" value="3">
+    </div>
+  </section>
+
+  <div class="main">
+    <section class="card">
+      <div class="head">
+        <h2>オフィスのフロア（論文 図5）</h2>
+        <p class="sub" id="mapSub"></p>
+      </div>
+      <div class="maptools">
+        <label for="selDest">矢印で見る知識: 目的地 <select id="selDest"></select> への進行方向</label>
+      </div>
+      <div class="mapbox"><svg id="map" viewBox="30 92 1030 676" role="img" aria-label="25 か所の場所と通路。各場所の記憶装置にある記憶媒体の数と、選んだ目的地への進行方向を表示"></svg></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--mem)"></i>記憶媒体（弧の長さ = 枚数 / 24）</span>
+        <span><i class="sw" style="background:var(--accent)"></i>保存された知識（目的地への進行方向）</span>
+        <span><i class="sw" style="background:var(--robot)"></i>ロボット（中の文字 = 目的地）</span>
+        <span><i class="sw" style="background:var(--mem);border-radius:2px"></i>運搬中の記憶媒体</span>
+      </div>
+    </section>
+
+    <aside>
+      <section class="card">
+        <h2>いまの成績</h2>
+        <div class="kpis" id="kpis"></div>
+      </section>
+      <section class="card">
+        <div class="dev-head">
+          <h2 id="devTitle">記憶装置</h2>
+          <label class="sub" for="selPlace">場所 <select id="selPlace"></select></label>
+        </div>
+        <div class="unitbar" id="unitbar" aria-label="この記憶装置の記憶媒体"></div>
+        <div class="stats" id="devStats"></div>
+        <p class="sub">各行は 1 つの目的地。知識（進行方向）が入っているのは<span class="tag mem">保存</span>の行だけで、評価値（C, c̄, γ）はすべての目的地について記録されます。行を選ぶと地図の矢印がその目的地に切り替わります。</p>
+        <div class="tablebox"><table id="devTable"><thead><tr><th>目的地</th><th>方向</th><th>C 最小</th><th class="c-cbar">c̄ 平均</th><th>γ /千step</th><th>有用さ U</th></tr></thead><tbody></tbody></table></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="card">
+    <div class="head">
+      <h2>いまのシミュレーションの推移</h2>
+      <p class="sub">T = 20,000 step（論文の履歴長）。記憶媒体の移動は 1T 経ってから始まります。</p>
+    </div>
+    <div class="charts">
+      <div>
+        <div class="sub">直近 T あたりの作業達成数</div>
+        <div class="chart" id="chLive"></div>
+      </div>
+      <div>
+        <div class="sub">各場所の記憶媒体の枚数（点線 = 初期配置）</div>
+        <div class="chart" id="chUnits"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>論文の実験を再現する</h2>
+      <button id="btnExp" type="button" class="primary">計算する</button>
+    </div>
+    <p class="sub">ロボット 4 台、記憶媒体は全知識の 1/2。作業割合 (A) で始め、5T で (B) に切り替えて 10T まで走らせます。条件ごとに別々のシミュレーションを裏で計算します（数秒）。</p>
+    <div class="progress" aria-hidden="true"><i id="expBar"></i></div>
+    <div id="expEmpty" class="empty">「計算する」を押すと、論文の図7・図8・図11 に対応するグラフがここに出ます。</div>
+    <div class="exp" id="expCharts" hidden>
+      <div class="wide">
+        <div class="sub">図7 対応：直近 T あたりの作業達成数の推移</div>
+        <div class="chart" id="chExp1"></div>
+        <div class="clegend" id="lgExp1"></div>
+      </div>
+      <div>
+        <div class="sub">図8 対応：切り替え前（2–5T）と後（6–10T）の平均</div>
+        <div class="chart" id="chExp2"></div>
+        <div class="clegend" id="lgExp2"></div>
+      </div>
+      <div>
+        <div class="sub">図11 対応：記憶媒体の量と作業達成数（2–5T の平均）</div>
+        <div class="chart" id="chExp3"></div>
+        <div class="clegend" id="lgExp3"></div>
+      </div>
+    </div>
+    <details class="table-view" id="expTableWrap" hidden><summary>数値の表を見る</summary><div class="tablebox" style="max-height:none"><table id="expTable"></table></div></details>
+  </section>
+
+  <section class="explain">
+    <div>
+      <h2>論文の考え方</h2>
+      <p>人の生活環境にある物や場所に、非接触で読み書きできる小さな記憶装置（RF-ID タグや知的データキャリアなど）を貼っておきます。ロボットが作業で得た知識をそこへ書き込めば、別のロボットはその場で知識を使えます。ロボット同士が直接話す必要も、全体の地図を一か所で管理する必要もありません。</p>
+      <p>ただし記憶装置の容量には限りがあり、どこでどの知識が必要になるかは前もって分かりません。そこでこの論文は、<strong>知識の有用さ</strong>を「その知識を蓄えておくことで、単位時間あたりにどれだけコストが減るか」で測ります。有用な知識だけを残し、さらに<strong>記憶媒体そのものをロボットが運んで置き直す</strong>ことで、作業の割合が変わっても自律的に適応させます。</p>
+
+      <h3>知識の有用さ（式1）</h3>
+      <div class="formula">U<sub>px</sub> = γ<sub>px</sub> · ( c̄<sub>p</sub>[x] − C<sub>p</sub>[x] )</div>
+      <ul>
+        <li><b>γ</b>: 場所 p で目的地 x の知識が要求される頻度。直近 T ステップの要求回数 ÷ T（式5・6）</li>
+        <li><b>c̄</b>: その場所から x までにかかったコストの平均（知識がないときの期待値, 式4）</li>
+        <li><b>C</b>: これまでに見つかった最小コスト。知識を使えばこのコストで済む（式2・3）</li>
+      </ul>
+      <p>記憶装置は m 枚の記憶媒体からなり、1 枚に 1 つの知識が入ります。満杯のときに新しい知識を得たら、m+1 個のうち最も有用さの小さい知識を消します。評価値はすべての目的地について残すので、作業の頻度が変われば知識は入れ替わります。</p>
+
+      <h3>記憶媒体の動的配置（式7〜10）</h3>
+      <p>各記憶装置で「入っている知識のうち最小の有用さ」を求め、それが環境全体の平均 M より大きければ記憶媒体を 1 枚増やし、小さければ 1 枚減らします。ロボットは訪れた記憶装置の最小有用さを覚えておき、その平均 M′ を M の代わりに使います（式10）。</p>
+      <div class="formula">n<sub>p</sub> ← n<sub>p</sub>+1 （min U ≥ M′, n<sub>p</sub> &lt; n<sub>pmax</sub>, n<sub>r</sub> &gt; 0）<br>n<sub>p</sub> ← n<sub>p</sub>−1 （min U &lt; M′, n<sub>p</sub> &gt; 1, n<sub>r</sub> &lt; n<sub>rmax</sub>）</div>
+      <p>ロボットは記憶媒体を 1 枚まで持ち運べます。運んでいる間は誰もその媒体を使えないので、環境全体の容量は一時的に減ります。</p>
+    </div>
+
+    <div>
+      <h2>オフィスでの繰り返し搬送</h2>
+      <ol>
+        <li>25 か所の場所（A–Y）に記憶装置があり、通路の数字は隣の場所までの距離（コスト）。</li>
+        <li>知識 K<sub>p</sub>[x] は「場所 p から目的地 x へ向かうとき、隣のどこへ進むのが最適か」。</li>
+        <li>ロボットは目的地を与えられると、その場の記憶装置に知識があればそれに従い、なければランダムに進みます。目的地に着くと次の目的地が与えられます。</li>
+        <li>記憶装置に着くたびに、出発してから通ってきた場所それぞれへの「来た方向」とそのコストを知識として獲得します（例: A→I→J→K→L と来たら、L では A, I, J, K への方向はすべて「K の方」）。</li>
+        <li>4 台が独立に動き、T = 2.0×10<sup>4</sup> step。初期配置は各場所 12 枚（全知識 24 枚の半分）、ロボットは 0 枚から始めます。</li>
+        <li>作業割合 (A) は目的地 A–H とそれ以外を 5:1、(B) は Q–Y とそれ以外を 5:1。5T で (A) から (B) に切り替えます。</li>
+      </ol>
+      <h3>論文の結果</h3>
+      <ul>
+        <li>作業割合が変わると、場所 E にある目的地 B の知識の有用さが下がる（図6）。</li>
+        <li>提案手法の作業達成数は、記憶媒体を一様に配置した場合の約 1.3 倍（図8）。前もって (A) に合わせて固定した配置は、(B) に変わると大きく落ちる。</li>
+        <li>J, T, W への知識を蓄える記憶装置が増え、E, C, H への知識は減る（表1）。Q–Y の記憶媒体が増え、A–N で減る（図9）。</li>
+        <li>ロボットの推定 M′ と真の M の比は 0.8〜1.2 で安定（図10）。同じ作業達成数に必要な記憶媒体の量が減る（図11：1,000 件/T に、固定なら 2/3、提案手法なら 1/2）。</li>
+      </ul>
+      <details class="more">
+        <summary>このシミュレータでの読み方と補い</summary>
+        <ul>
+          <li>1 step でロボットは距離 1 だけ進みます（通路の数字 = かかる step 数）。</li>
+          <li>知識がないときのランダムな移動では、来た通路を戻らないようにしました（行き止まりは除く）。論文の「知識なし」の作業達成数（約 180〜200/T）に近くなります。</li>
+          <li>「5:1」は目的地 1 か所ごとの重みとして扱いました。</li>
+          <li>保存できる知識は、これまでの最小コスト以下の経路で得たものだけにしました（方向とコストを常に対応させるため。これで知識をたどっても堂々巡りになりません）。</li>
+          <li>「全知識」は各場所に 24 枚あり、最短経路の方向がすべて入っている比較条件です。論文の「前もって適応させた配置」は、(A) または (B) で 5T 走らせて配置と知識を固定したものとして再現しています。</li>
+          <li>作業達成数の絶対値は論文より大きめに出ます（1 step の定義などが論文に書かれていないため）。条件どうしの大小関係と比を見てください。</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ===== Environment-attached storage engine =====
+ * 梅谷・前・井上・新井「自律作業ロボット間における知識共有を目指した環境添付型記憶媒体の動的配置」
+ * 日本ロボット学会誌 20(6), 631-639, 2002 のオフィス内繰り返し搬送シミュレーションを再現する。
+ * ロボットは地図を持たず、各場所の記憶装置に蓄えられた「目的地への最適な移動方向」だけを頼りに動く。
+ */
+(function (global) {
+'use strict';
+
+/* ---- 図 5 のオフィスフロアモデル（場所 A–Y、数字は隣接場所間の距離＝コスト） ---- */
+const NODES = {
+  A: [228, 150], B: [715, 150], C: [852, 150],
+  D: [540, 232], E: [715, 232], F: [1002, 232],
+  G: [85, 318], H: [240, 318], I: [340, 318], J: [425, 318], K: [540, 318], L: [715, 318], M: [857, 318],
+  N: [852, 412], O: [540, 415],
+  P: [220, 462], Q: [340, 462],
+  R: [540, 563], S: [715, 563], T: [847, 563], U: [997, 563],
+  V: [220, 712], W: [390, 712], X: [540, 712], Y: [715, 712],
+};
+// [a, b, コスト, 折れ点...]
+const EDGES = [
+  ['A', 'G', 27, [85, 150]], ['A', 'I', 23, [340, 150]],
+  ['G', 'H', 18], ['H', 'I', 6], ['I', 'J', 6], ['J', 'K', 12], ['K', 'L', 18], ['L', 'M', 6],
+  ['J', 'D', 18, [425, 150], [540, 150]], ['D', 'K', 6], ['D', 'B', 25, [630, 232], [630, 150]],
+  ['B', 'E', 6], ['B', 'C', 9], ['C', 'F', 14, [1002, 150]], ['E', 'F', 18], ['E', 'L', 6],
+  ['M', 'F', 30, [1002, 318]], ['M', 'N', 6], ['N', 'U', 23, [997, 412]], ['N', 'T', 12],
+  ['L', 'S', 18], ['K', 'O', 8], ['O', 'R', 9],
+  ['H', 'P', 30, [240, 385], [100, 385], [100, 462]], ['I', 'Q', 12], ['J', 'Q', 17, [425, 462]],
+  ['P', 'Q', 12], ['Q', 'R', 27, [340, 563]], ['R', 'S', 18], ['S', 'T', 6], ['T', 'U', 12],
+  ['P', 'V', 15], ['V', 'W', 15], ['W', 'X', 15], ['X', 'R', 9], ['X', 'Y', 15], ['S', 'Y', 9],
+  ['Y', 'U', 18, [997, 712]],
+];
+const NAMES = Object.keys(NODES);
+const NP = NAMES.length;               // 25
+const IDX = Object.fromEntries(NAMES.map((n, i) => [n, i]));
+
+const adj = NAMES.map(() => []);       // [{to, cost, edge}]
+EDGES.forEach((e, ei) => {
+  const a = IDX[e[0]], b = IDX[e[1]];
+  adj[a].push({ to: b, cost: e[2], edge: ei });
+  adj[b].push({ to: a, cost: e[2], edge: ei });
+});
+
+// 全点対の最短コストと次の一歩（「すべての知識がある」比較条件と評価用）
+const DIST = [], NEXT = [];
+for (let s = 0; s < NP; s++) {
+  const d = new Array(NP).fill(Infinity), first = new Array(NP).fill(-1), done = new Array(NP).fill(false);
+  d[s] = 0;
+  for (;;) {
+    let u = -1; for (let i = 0; i < NP; i++) if (!done[i] && (u < 0 || d[i] < d[u])) u = i;
+    if (u < 0 || d[u] === Infinity) break;
+    done[u] = true;
+    for (const { to, cost } of adj[u]) if (d[u] + cost < d[to]) { d[to] = d[u] + cost; first[to] = u === s ? to : first[u]; }
+  }
+  DIST.push(d); NEXT.push(first);
+}
+
+/* 作業割合: hot に含まれる目的地の集合と、それ以外の集合を ratio:1 で選ぶ */
+const RATIOS = {
+  A: { name: '作業割合 (A)：A–H を多く', hot: 'ABCDEFGH' },
+  B: { name: '作業割合 (B)：Q–Y を多く', hot: 'QRSTUVWXY' },
+  U: { name: '一様', hot: '' },
+};
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const MODES = {
+  proposed: '提案手法（動的配置）',
+  uniform: '一様配置（移動なし）',
+  frozen: '配置を固定（評価も止める）',
+  none: '知識なし',
+  all: 'すべての知識あり',
+};
+
+class Sim {
+  constructor(opt = {}) {
+    this.opt = Object.assign({
+      robots: 4, T: 20000, memRatio: 0.5, npmax: NP - 1, nrmax: 1,
+      mode: 'proposed', ratio: 'A', bias: 5, seed: 1, startDelay: null, noBack: true, perDest: true,
+    }, opt);
+    this.reset();
+  }
+
+  reset() {
+    const o = this.opt;
+    this.rng = mulberry32(o.seed);
+    this.t = 0;
+    this.achieved = 0;
+    this.achLog = [];             // 各ステップ時刻での累計（間引き）
+    this.events = [];
+    this.flowLog = [];            // 記憶媒体の移動
+    const per = Math.max(1, Math.round(o.memRatio * o.npmax));
+    this.dev = NAMES.map((name, p) => {
+      const crit = NAMES.map(() => ({ cbar: 0, N: 0, C: Infinity, dir: -1, stored: false, req: [] }));
+      return { p, name, np: o.mode === 'all' ? o.npmax : (o.mode === 'none' ? 0 : per), crit, visits: 0, tset: 0, minU: 0 };
+    });
+    if (o.mode === 'all') {
+      for (const d of this.dev) for (let x = 0; x < NP; x++) if (x !== d.p) { const c = d.crit[x]; c.dir = NEXT[d.p][x]; c.C = DIST[d.p][x]; c.stored = true; }
+    }
+    this.totalUnits = this.dev.reduce((s, d) => s + d.np, 0);
+    this.robots = [];
+    for (let i = 0; i < o.robots; i++) {
+      const at = Math.floor(this.rng() * NP);
+      const r = { id: i, at, from: at, to: -1, edgeCost: 0, prog: 0, cum: 0, dest: -1, path: [], carry: 0, umin: new Map(), M: 0, tasks: 0, usedKnow: 0, randomMoves: 0, edge: -1 };
+      this.newTask(r);
+      this.decide(r);
+      this.robots.push(r);
+    }
+  }
+
+  log(msg, kind = 'info') { this.events.push({ t: this.t, msg, kind }); if (this.events.length > 300) this.events.shift(); }
+
+  setRatio(key) { if (this.opt.ratio !== key) { this.opt.ratio = key; this.log(`作業割合を「${RATIOS[key].name}」に変更`, 'ratio'); } }
+  setMode(m) { this.opt.mode = m; }
+
+  pickDest(cur) {
+    const o = this.opt, hot = RATIOS[o.ratio].hot;
+    if (!hot) { let x; do { x = Math.floor(this.rng() * NP); } while (x === cur); return x; }
+    if (o.perDest) {   // 目的地 1 か所ごとの重みを bias:1 とする読み方
+      let tot = 0; const w = [];
+      for (let i = 0; i < NP; i++) { const v = i === cur ? 0 : (hot.includes(NAMES[i]) ? o.bias : 1); w.push(v); tot += v; }
+      let u = this.rng() * tot; for (let i = 0; i < NP; i++) { u -= w[i]; if (u < 0) return i; }
+      return (cur + 1) % NP;
+    }
+    const hs = [], os = [];
+    for (let i = 0; i < NP; i++) if (i !== cur) (hot.includes(NAMES[i]) ? hs : os).push(i);
+    const useHot = hs.length && (!os.length || this.rng() < o.bias / (o.bias + 1));
+    const arr = useHot ? hs : os;
+    return arr[Math.floor(this.rng() * arr.length)];
+  }
+
+  newTask(r) {
+    r.dest = this.pickDest(r.at);
+    r.cum = 0;
+    r.path = [{ p: r.at, cum: 0 }];
+  }
+
+  /* 式(6): 直近 T ステップ（設置からの経過が T 未満ならその経過時間）あたりの使用要求の頻度 */
+  gamma(d, c) {
+    const T = this.opt.T, t = this.t;
+    while (c.req.length && c.req[0] <= t - T) c.req.shift();
+    const span = Math.max(1, Math.min(T, t - d.tset));
+    return c.req.length / span;
+  }
+  usefulness(d, x) {
+    const c = d.crit[x];
+    if (!isFinite(c.C) || c.N === 0) return 0;
+    return this.gamma(d, c) * Math.max(0, c.cbar - c.C);       // 式(1)
+  }
+
+  storedList(d) { const a = []; for (let x = 0; x < NP; x++) if (d.crit[x].stored) a.push(x); return a; }
+
+  /* 記憶装置の知識を有用さの大きい順に m 個まで保つ（2.3 節） */
+  evict(d) {
+    let worst = -1, wu = Infinity;
+    for (let x = 0; x < NP; x++) { const c = d.crit[x]; if (!c.stored) continue; const u = this.usefulness(d, x); if (u < wu) { wu = u; worst = x; } }
+    if (worst >= 0) { d.crit[worst].stored = false; d.crit[worst].dir = -1; }
+    return worst;
+  }
+
+  /* 知識の獲得: ロボットが記憶装置 p で「目的地 x へは dir 方向、コスト c」を得た（4.2 節） */
+  acquire(d, x, dir, c) {
+    const cr = d.crit[x], o = this.opt;
+    cr.cbar = (cr.N * cr.cbar + c) / (cr.N + 1); cr.N++;           // 式(4)
+    const ok = c <= cr.C;                                          // 最小コスト以下の方法だけが知識になる
+    if (c < cr.C) cr.C = c;                                        // 式(3)
+    if (o.mode === 'none' || o.mode === 'all' || o.mode === 'frozen') return;
+    if (!ok) return;
+    if (cr.stored) { cr.dir = dir; return; }                       // 式(2)
+    if (d.np <= 0) return;
+    if (this.storedList(d).length < d.np) { cr.stored = true; cr.dir = dir; return; }
+    // 容量いっぱい: 最も有用さの小さい知識より有用なら入れ替える（2.3 節）
+    let worst = -1, wu = Infinity;
+    for (let y = 0; y < NP; y++) { const cy = d.crit[y]; if (!cy.stored) continue; const u = this.usefulness(d, y); if (u < wu) { wu = u; worst = y; } }
+    if (this.usefulness(d, x) > wu) { d.crit[worst].stored = false; d.crit[worst].dir = -1; cr.stored = true; cr.dir = dir; }
+  }
+
+  minUseful(d) {
+    if (d.np <= 0) return 0;
+    const st = this.storedList(d);
+    if (st.length < d.np) return 0;             // 空の記憶媒体は有用さ 0
+    let m = Infinity; for (const x of st) m = Math.min(m, this.usefulness(d, x));
+    return m;
+  }
+
+  /* ロボットが場所 p に着いたときの処理 */
+  arrive(r) {
+    const o = this.opt, p = r.at, d = this.dev[p];
+    d.visits++;
+    // (1) 出発点から経由した各場所への「来た方向」とコストを獲得（4.2 節）
+    const seen = new Set();
+    for (let i = r.path.length - 1; i >= 0; i--) {
+      const e = r.path[i];
+      if (e.p === p || seen.has(e.p)) continue;
+      seen.add(e.p);
+      this.acquire(d, e.p, r.from, r.cum - e.cum);
+    }
+    r.path.push({ p, cum: r.cum });
+    // (2) 目的地に着いたら作業達成、新しい目的地
+    if (p === r.dest) {
+      this.achieved++; r.tasks++;
+      this.newTask(r);
+    }
+    // (3) 記憶媒体の有用さを評価し、しきい値 M' と比べて置く／取り除く（式(8)(9)(10)）
+    if (o.mode === 'proposed') {
+      const u = this.minUseful(d);
+      d.minU = u;
+      r.umin.set(p, u);
+      let s = 0; for (const v of r.umin.values()) s += v;
+      r.M = s / r.umin.size;                                       // 式(10)
+      const start = o.startDelay == null ? o.T : o.startDelay;
+      if (this.t >= start) {
+        if (u >= r.M && d.np < o.npmax && r.carry > 0) {
+          d.np++; r.carry--; this.flowLog.push({ t: this.t, p, kind: 'put', r: r.id });
+        } else if (u < r.M && d.np > 1 && r.carry < o.nrmax) {
+          if (this.storedList(d).length >= d.np) this.evict(d);
+          d.np--; r.carry++; this.flowLog.push({ t: this.t, p, kind: 'take', r: r.id });
+        }
+        if (this.flowLog.length > 4000) this.flowLog.splice(0, 1000);
+      }
+    } else d.minU = this.minUseful(d);
+    // (4) 目的地への方向を記憶装置に問い合わせる（使用要求）
+    this.decide(r);
+  }
+
+  decide(r) {
+    const d = this.dev[r.at], x = r.dest, c = d.crit[x];
+    c.req.push(this.t);                                            // 式(5) g=1
+    let next = -1;
+    if (c.stored && c.dir >= 0) { next = c.dir; r.usedKnow++; r.lastKnow = true; }
+    else {
+      let nb = adj[r.at];
+      if (this.opt.noBack && nb.length > 1) nb = nb.filter(e => e.to !== r.from || r.from === r.at);
+      next = nb[Math.floor(this.rng() * nb.length)].to; r.randomMoves++; r.lastKnow = false;
+    }
+    const e = adj[r.at].find(e => e.to === next);
+    r.from = r.at; r.to = next; r.edgeCost = e.cost; r.edge = e.edge; r.prog = 0;
+  }
+
+  step(n = 1) {
+    for (let k = 0; k < n; k++) {
+      this.t++;
+      for (const r of this.robots) {
+        r.prog++; r.cum++;
+        if (r.prog >= r.edgeCost) { r.at = r.to; this.arrive(r); }
+      }
+      if (this.t % 200 === 0) { this.achLog.push([this.t, this.achieved]); if (this.achLog.length > 3000) this.achLog.shift(); }
+    }
+  }
+
+  /* 直近 T ステップの作業達成数（論文の縦軸） */
+  perT() {
+    const L = this.achLog; if (!L.length) return 0;
+    const last = L[L.length - 1], T = this.opt.T;
+    let i = L.length - 1; while (i > 0 && L[i][0] > last[0] - T) i--;
+    const span = last[0] - L[i][0];
+    return span > 0 ? (last[1] - L[i][1]) * T / span : 0;
+  }
+  trueM() { let s = 0; for (const d of this.dev) s += this.minUseful(d); return s / NP; }
+}
+
+const api = { Sim, NODES, EDGES, NAMES, IDX, NP, adj, DIST, NEXT, RATIOS, MODES };
+if (typeof module !== 'undefined' && module.exports) module.exports = api;
+else global.EAS = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+(() => {
+'use strict';
+const E = window.EAS;
+const { Sim, NODES, EDGES, NAMES, IDX, NP, adj } = E;
+const $ = (id) => document.getElementById(id);
+const T = 20000;
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SPEEDS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
+const MEMS = [null, 1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6, 1];
+const MEMLAB = ['', '1/6', '1/3', '1/2', '2/3', '5/6', 'すべて'];
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = (v) => cs.getPropertyValue(v).trim();
+  for (const k of ['ink', 'muted', 'line', 'wall', 'accent', 'mem', 'take', 'robot', 'surface', 'sunken', 's1', 's2', 's3', 'ref', 'bg']) C[k] = g('--' + k);
+}
+readColors();
+
+/* ---------- 状態 ---------- */
+let sim, running = !reduceMotion, speedIdx = 5, selPlace = IDX.E, selDest = IDX.B, livePts = [], ratioMarks = [], initUnits = [];
+const state = { mode: 'proposed', ratio: 'A', robots: 4, mem: 3 };
+function newSim() {
+  sim = new Sim({ mode: state.mode, ratio: state.ratio, robots: state.robots, memRatio: MEMS[state.mem], seed: 11 });
+  livePts = [[0, 0]]; ratioMarks = []; initUnits = sim.dev.map(d => d.np);
+  sim.log('シミュレーションを開始', 'info');
+  renderAll(true);
+}
+
+/* ---------- フロア図 ---------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const mk = (tag, attrs = {}, parent) => { const el = document.createElementNS(SVGNS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); if (parent) parent.appendChild(el); return el; };
+const map = $('map');
+const edgePts = EDGES.map(e => [NODES[e[0]], ...e.slice(3), NODES[e[1]]]);
+const edgeLen = edgePts.map(pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; });
+function pointOn(ei, fromName, frac) {
+  let pts = edgePts[ei]; if (EDGES[ei][0] !== fromName) pts = pts.slice().reverse();
+  let target = frac * edgeLen[ei];
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    if (target <= seg || i === pts.length - 1) { const k = seg ? Math.min(1, target / seg) : 0; return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k]; }
+    target -= seg;
+  }
+  return pts[pts.length - 1];
+}
+// 場所 p から隣 q への最初の向き
+function firstDir(p, q) {
+  const ei = adj[p].find(e => e.to === q).edge;
+  let pts = edgePts[ei]; if (EDGES[ei][0] !== NAMES[p]) pts = pts.slice().reverse();
+  const a = pts[0], b = pts[1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+}
+let gArrows, gRobots, nodeEls = [], robotEls = [];
+function buildMap() {
+  map.innerHTML = '';
+  const defs = mk('defs', {}, map);
+  const mkr = mk('marker', { id: 'arr', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto-start-reverse' }, defs);
+  mk('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--accent)' }, mkr);
+  const gE = mk('g', {}, map);
+  EDGES.forEach((e, i) => {
+    const pts = edgePts[i];
+    mk('polyline', { points: pts.map(p => p.join(',')).join(' '), fill: 'none', stroke: 'var(--wall)', 'stroke-width': 9, 'stroke-linejoin': 'miter', 'stroke-linecap': 'butt', opacity: 0.9 }, gE);
+    // 距離ラベル: 最長の区間の中点
+    let best = 0, bl = -1; for (let k = 1; k < pts.length; k++) { const l = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); if (l > bl) { bl = l; best = k; } }
+    const a = pts[best - 1], b = pts[best], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    const vert = Math.abs(b[0] - a[0]) < Math.abs(b[1] - a[1]);
+    const t = mk('text', { x: mx + (vert ? 16 : 0), y: my + (vert ? 6 : -12), 'text-anchor': vert ? 'start' : 'middle', 'font-size': 20, 'font-family': 'IBM Plex Mono, monospace', fill: 'var(--muted)' }, gE);
+    t.textContent = e[2];
+  });
+  gArrows = mk('g', {}, map);
+  const gN = mk('g', {}, map);
+  nodeEls = NAMES.map((name, p) => {
+    const [x, y] = NODES[name];
+    const g = mk('g', { class: 'node', 'data-p': p, tabindex: 0, role: 'button', 'aria-label': `場所 ${name}` }, gN);
+    g.style.cursor = 'pointer';
+    mk('circle', { cx: x, cy: y, r: 40, fill: 'transparent' }, g);
+    const sel = mk('circle', { cx: x, cy: y, r: 33, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 3, opacity: 0 }, g);
+    const track = mk('circle', { cx: x, cy: y, r: 26, fill: 'none', stroke: 'var(--line)', 'stroke-width': 6 }, g);
+    const arc = mk('circle', { cx: x, cy: y, r: 26, fill: 'none', stroke: 'var(--mem)', 'stroke-width': 6, transform: `rotate(-90 ${x} ${y})`, 'stroke-dasharray': `0 999` }, g);
+    const body = mk('circle', { cx: x, cy: y, r: 20, fill: 'var(--surface)', stroke: 'var(--wall)', 'stroke-width': 2 }, g);
+    const lab = mk('text', { x, y: y + 1, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 22, 'font-weight': 700, fill: 'var(--ink)', 'font-family': 'BIZ UDPGothic, sans-serif' }, g);
+    lab.textContent = name;
+    const pulse = mk('circle', { cx: x, cy: y, r: 30, fill: 'none', stroke: 'var(--mem)', 'stroke-width': 3, opacity: 0 }, g);
+    const sign = mk('text', { x: x + 25, y: y - 22, 'font-size': 22, 'font-weight': 700, fill: 'var(--mem)', 'font-family': 'IBM Plex Mono, monospace', opacity: 0 }, g);
+    g.addEventListener('click', () => { selPlace = p; $('selPlace').value = p; renderDevice(); updateMap(); });
+    g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); g.dispatchEvent(new Event('click')); } });
+    return { g, sel, arc, body, lab, pulse, sign, track };
+  });
+  gRobots = mk('g', {}, map);
+  robotEls = [];
+}
+function ensureRobots() {
+  while (robotEls.length < sim.robots.length) {
+    const g = mk('g', {}, gRobots);
+    const c = mk('circle', { r: 16, fill: 'var(--robot)', stroke: 'var(--surface)', 'stroke-width': 2.5 }, g);
+    const t = mk('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 18, 'font-weight': 700, fill: 'var(--surface)', 'font-family': 'BIZ UDPGothic, sans-serif' }, g);
+    const box = mk('rect', { width: 13, height: 13, x: 9, y: -24, rx: 2, fill: 'var(--mem)', stroke: 'var(--surface)', 'stroke-width': 1.5 }, g);
+    robotEls.push({ g, c, t, box });
+  }
+  while (robotEls.length > sim.robots.length) robotEls.pop().g.remove();
+}
+const ARC = 2 * Math.PI * 26;
+function updateMap() {
+  ensureRobots();
+  const npmax = sim.opt.npmax;
+  for (let p = 0; p < NP; p++) {
+    const d = sim.dev[p], el = nodeEls[p];
+    const L = ARC * Math.min(1, d.np / npmax);
+    el.arc.setAttribute('stroke-dasharray', `${L} ${ARC}`);
+    el.sel.setAttribute('opacity', p === selPlace ? 1 : 0);
+    el.body.setAttribute('stroke', p === selDest ? 'var(--accent)' : 'var(--wall)');
+    el.body.setAttribute('stroke-width', p === selDest ? 4 : 2);
+  }
+  // 直近の記憶媒体の移動（＋置いた／−取った）
+  const recent = new Map();
+  for (let i = sim.flowLog.length - 1; i >= 0; i--) { const f = sim.flowLog[i]; if (sim.t - f.t > 400 * Math.max(1, SPEEDS[speedIdx] / 20)) break; if (!recent.has(f.p)) recent.set(f.p, f); }
+  for (let p = 0; p < NP; p++) {
+    const el = nodeEls[p], f = recent.get(p);
+    if (f) { el.pulse.setAttribute('opacity', 0.9); el.pulse.setAttribute('stroke', f.kind === 'put' ? 'var(--mem)' : 'var(--take)'); el.sign.setAttribute('opacity', 1); el.sign.setAttribute('fill', f.kind === 'put' ? 'var(--mem)' : 'var(--take)'); el.sign.textContent = f.kind === 'put' ? '+' : '−'; }
+    else { el.pulse.setAttribute('opacity', 0); el.sign.setAttribute('opacity', 0); }
+  }
+  // 選んだ目的地への知識の矢印
+  let h = '';
+  for (let p = 0; p < NP; p++) {
+    if (p === selDest) continue;
+    const c = sim.dev[p].crit[selDest];
+    if (!c.stored || c.dir < 0) continue;
+    const [x, y] = NODES[NAMES[p]], [ux, uy] = firstDir(p, c.dir);
+    const x1 = x + ux * 30, y1 = y + uy * 30, x2 = x + ux * 66, y2 = y + uy * 66;
+    h += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" marker-end="url(#arr)"/>`;
+  }
+  gArrows.innerHTML = h;
+  // ロボット
+  sim.robots.forEach((r, i) => {
+    const el = robotEls[i];
+    const frac = r.edgeCost ? Math.min(1, r.prog / r.edgeCost) : 0;
+    const [x, y] = pointOn(r.edge, NAMES[r.from], frac);
+    el.g.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+    el.t.textContent = NAMES[r.dest];
+    el.box.setAttribute('opacity', r.carry > 0 ? 1 : 0);
+  });
+  const stored = sim.dev.reduce((s, d) => s + (d.crit[selDest].stored && d.p !== selDest ? 1 : 0), 0);
+  $('mapSub').textContent = `目的地 ${NAMES[selDest]} への知識を持つ記憶装置: ${stored} / 24 か所`;
+}
+
+/* ---------- 右パネル ---------- */
+function fmtT(t) { return (t / T).toFixed(2) + 'T'; }
+function renderKpis() {
+  const perT = sim.perT();
+  const M = sim.trueM();
+  let Mr = '–';
+  if (state.mode === 'proposed' && M > 0) { const rs = sim.robots.filter(r => r.umin.size); if (rs.length) Mr = (rs.reduce((s, r) => s + r.M, 0) / rs.length / M).toFixed(2); }
+  const carry = sim.robots.reduce((s, r) => s + r.carry, 0), units = sim.dev.reduce((s, d) => s + d.np, 0);
+  const know = sim.robots.reduce((s, r) => s + r.usedKnow, 0), rnd = sim.robots.reduce((s, r) => s + r.randomMoves, 0);
+  const items = [
+    [Math.round(perT).toLocaleString(), '', '作業達成数（直近 T あたり）'],
+    [(sim.t / T).toFixed(2), 'T', `経過（${sim.t.toLocaleString()} step）`],
+    [Mr, '', 'M′ / M（ロボットの推定 ÷ 真値）'],
+    [`${units}`, `<small> 枚 + 運搬中 ${carry}</small>`, '記憶装置にある記憶媒体'],
+  ];
+  $('kpis').innerHTML = items.map(([v, u, l]) => `<div class="kpi"><span class="v">${v}<small>${u}</small></span><span class="l">${l}</span></div>`).join('') +
+    `<div class="kpi" style="grid-column:1/-1"><span class="l">分岐点での進み方: 知識に従った ${(100 * know / Math.max(1, know + rnd)).toFixed(0)}% ・ ランダム ${(100 * rnd / Math.max(1, know + rnd)).toFixed(0)}%（累計）</span></div>`;
+}
+function renderDevice() {
+  const d = sim.dev[selPlace];
+  $('devTitle').textContent = `記憶装置 ${d.name}`;
+  const stored = sim.storedList(d);
+  let ub = '';
+  for (let i = 0; i < sim.opt.npmax; i++) ub += `<i class="${i < stored.length ? 'full' : i < d.np ? 'empty' : ''}" title="${i < stored.length ? '知識が入った記憶媒体' : i < d.np ? '空の記憶媒体' : '空き（媒体なし）'}"></i>`;
+  $('unitbar').innerHTML = ub;
+  const minU = sim.minUseful(d);
+  $('devStats').innerHTML = `<div>記憶媒体<b>${d.np} 枚</b></div><div>知識の数<b>${stored.length}</b></div><div>最小の有用さ<b>${minU.toFixed(3)}</b></div>`;
+  const rows = [];
+  for (let x = 0; x < NP; x++) {
+    if (x === selPlace) continue;
+    const c = d.crit[x], u = sim.usefulness(d, x), g = sim.gamma(d, c) * 1000;
+    rows.push({ x, c, u, g });
+  }
+  rows.sort((a, b) => (b.c.stored - a.c.stored) || (b.u - a.u));
+  let minX = -1, mu = Infinity; for (const r of rows) if (r.c.stored && r.u < mu) { mu = r.u; minX = r.x; }
+  $('devTable').querySelector('tbody').innerHTML = rows.map(r => {
+    const dir = r.c.stored && r.c.dir >= 0 ? '→ ' + NAMES[r.c.dir] : '–';
+    const tag = r.c.stored ? `<span class="tag mem">保存</span>${r.x === minX && stored.length >= d.np ? ' <span class="tag min">最小</span>' : ''}` : '';
+    return `<tr class="${r.c.stored ? 'st' : 'nst'}${r.x === selDest ? ' sel' : ''}" data-x="${r.x}"><td><b>${NAMES[r.x]}</b> ${tag}</td><td>${dir}</td><td class="mono">${isFinite(r.c.C) ? r.c.C : '–'}</td><td class="mono c-cbar">${r.c.N ? r.c.cbar.toFixed(1) : '–'}</td><td class="mono">${r.g.toFixed(2)}</td><td class="mono">${r.u.toFixed(3)}</td></tr>`;
+  }).join('');
+}
+$('devTable').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-x]'); if (!tr) return; selDest = +tr.dataset.x; $('selDest').value = selDest; renderDevice(); updateMap(); });
+
+/* ---------- グラフ（SVG を実際の幅で描く） ---------- */
+// 目盛りが 1・2・5 の倍数になるように最大値と刻みを決める（4〜5 本）
+function niceScale(v, fixed) {
+  if (fixed) return fixed;
+  if (v <= 0) v = 1;
+  const raw = v / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
+  let step = 10 * p; for (const m of [1, 2, 5, 10]) if (m * p >= raw) { step = m * p; break; }
+  const n = Math.ceil(v / step); return { max: step * n, n };
+}
+function lineChart(box, opt) {
+  const W = Math.max(260, box.clientWidth || 300), H = opt.height || (W < 480 ? 200 : 240);
+  const m = { l: 46, r: opt.rightPad || 14, t: 12, b: 30 };
+  const xs = opt.xMax, sc = niceScale(opt.yMax * 1.04, opt.yFixed), ys = sc.max;
+  const X = (v) => m.l + (W - m.l - m.r) * (v / xs), Y = (v) => m.t + (H - m.t - m.b) * (1 - v / ys);
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${opt.label || ''}">`;
+  for (let i = 0; i <= sc.n; i++) { const v = ys * i / sc.n, y = Y(v); s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="${C.line}" stroke-width="1"/><text x="${m.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${Math.round(v).toLocaleString()}</text>`; }
+  const xt = opt.xTicks || []; for (const [v, lab] of xt) s += `<text x="${X(v)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${lab}</text>`;
+  for (const mk2 of (opt.marks || [])) s += `<line x1="${X(mk2.x)}" x2="${X(mk2.x)}" y1="${m.t}" y2="${H - m.b}" stroke="${C.ink}" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/><text x="${X(mk2.x) + 4}" y="${m.t + 11}" font-size="11" fill="${C.ink}">${mk2.label}</text>`;
+  for (const se of opt.series) {
+    if (!se.pts.length) continue;
+    const d = se.pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join('');
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${se.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+    if (se.label) { const lp = se.pts[se.pts.length - 1]; s += `<text x="${X(lp[0]) + 5}" y="${Y(lp[1]) + 4}" font-size="11" fill="${C.ink}">${se.label}</text>`; }
+  }
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.muted}" stroke-width="1"/>`;
+  s += `<line class="xh" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="${C.ink}" stroke-width="1" opacity="0"/>`;
+  s += `<rect class="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/></svg>`;
+  box.innerHTML = s + '<div class="tip" hidden></div>';
+  const svg = box.querySelector('svg'), xh = svg.querySelector('.xh'), tip = box.querySelector('.tip');
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    const v = Math.max(0, Math.min(xs, (px - m.l) / (W - m.l - m.r) * xs));
+    xh.setAttribute('x1', X(v)); xh.setAttribute('x2', X(v)); xh.setAttribute('opacity', 0.35);
+    const lines = opt.series.filter(se => se.pts.length).map(se => {
+      let best = se.pts[0]; for (const p of se.pts) if (Math.abs(p[0] - v) < Math.abs(best[0] - v)) best = p;
+      return `<span style="color:${se.tipColor || '#fff'}">■</span> ${se.name}: ${Math.round(best[1]).toLocaleString()}`;
+    });
+    tip.innerHTML = `<b>${opt.xFmt ? opt.xFmt(v) : v.toFixed(1)}</b><br>${lines.join('<br>')}`;
+    tip.hidden = false; tip.style.left = Math.max(70, Math.min(W - 70, X(v))) + 'px'; tip.style.top = m.t + 'px';
+  };
+  const leave = () => { tip.hidden = true; xh.setAttribute('opacity', 0); };
+  const hit = svg.querySelector('.hit');
+  hit.addEventListener('mousemove', move); hit.addEventListener('mouseleave', leave);
+  hit.addEventListener('touchstart', move, { passive: true }); hit.addEventListener('touchmove', move, { passive: true }); hit.addEventListener('touchend', leave);
+}
+function barChart(box, opt) {
+  const W = Math.max(260, box.clientWidth || 300), H = opt.height || (W < 480 ? 200 : 240);
+  const m = { l: 40, r: 10, t: 12, b: opt.rotate ? 44 : 28 };
+  const cats = opt.cats, n = cats.length, groups = opt.groups;
+  const sc = niceScale(opt.yMax * 1.04, opt.yFixed), ys = sc.max;
+  const band = (W - m.l - m.r) / n, gap = 2;
+  const bw = Math.max(2, (band * 0.78 - gap * (groups.length - 1)) / groups.length);
+  const Y = (v) => m.t + (H - m.t - m.b) * (1 - v / ys);
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${opt.label || ''}">`;
+  for (let i = 0; i <= sc.n; i++) { const v = ys * i / sc.n, y = Y(v); s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="${C.line}"/><text x="${m.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${Math.round(v).toLocaleString()}</text>`; }
+  cats.forEach((cat, i) => {
+    const x0 = m.l + band * i + band * 0.11;
+    groups.forEach((g, j) => {
+      const v = g.values[i]; if (v == null) return;
+      const x = x0 + j * (bw + gap), y = Y(v), h = Y(0) - y, rr = Math.min(4, bw / 2, h);
+      s += `<path data-i="${i}" data-j="${j}" d="M${x},${Y(0)} V${y + rr} Q${x},${y} ${x + rr},${y} H${x + bw - rr} Q${x + bw},${y} ${x + bw},${y + rr} V${Y(0)} Z" fill="${g.color}"/>`;
+    });
+    if (opt.refs) { const rv = opt.refs[i]; if (rv != null) s += `<line x1="${m.l + band * i + 2}" x2="${m.l + band * (i + 1) - 2}" y1="${Y(rv)}" y2="${Y(rv)}" stroke="${C.ink}" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.7"/>`; }
+    const cx = m.l + band * (i + 0.5);
+    s += opt.rotate ? `<text x="${cx}" y="${H - m.b + 12}" text-anchor="end" font-size="11" fill="${C.muted}" transform="rotate(-35 ${cx} ${H - m.b + 12})">${cat}</text>`
+      : `<text x="${cx}" y="${H - 9}" text-anchor="middle" font-size="${band < 16 ? 9 : 11}" fill="${C.muted}" font-family="BIZ UDPGothic, sans-serif">${cat}</text>`;
+  });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.muted}"/>`;
+  cats.forEach((cat, i) => { s += `<rect class="hb" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${H - m.t - m.b}" fill="transparent"/>`; });
+  s += '</svg>';
+  box.innerHTML = s + '<div class="tip" hidden></div>';
+  const tip = box.querySelector('.tip');
+  box.querySelectorAll('.hb').forEach(el => {
+    const show = () => {
+      const i = +el.dataset.i;
+      tip.innerHTML = `<b>${opt.tipCat ? opt.tipCat(i) : cats[i]}</b><br>` + groups.map(g => g.values[i] == null ? '' : `${g.name}: ${opt.fmt ? opt.fmt(g.values[i]) : Math.round(g.values[i]).toLocaleString()}`).filter(Boolean).join('<br>') + (opt.refs && opt.refs[i] != null ? `<br>${opt.refName}: ${opt.refs[i]}` : '');
+      tip.hidden = false; tip.style.left = Math.max(70, Math.min(W - 70, m.l + band * (i + 0.5))) + 'px'; tip.style.top = m.t + 'px';
+    };
+    el.addEventListener('mouseenter', show); el.addEventListener('touchstart', show, { passive: true });
+    el.addEventListener('mouseleave', () => { tip.hidden = true; });
+  });
+}
+
+function renderLive() {
+  const tmax = Math.max(2 * T, Math.ceil(sim.t / T) * T);
+  const ticks = []; const stepT = tmax / T > 8 ? 2 : 1; for (let k = 0; k <= tmax / T; k += stepT) ticks.push([k * T, k + 'T']);
+  lineChart($('chLive'), {
+    xMax: tmax, yMax: Math.max(400, ...livePts.map(p => p[1])), xTicks: ticks, label: '直近 T あたりの作業達成数',
+    marks: ratioMarks.map(m => ({ x: m.t, label: m.label })),
+    series: [{ name: '作業達成数 / T', pts: livePts.filter(p => p[0] >= T * 0.25), color: C.s1, tipColor: C.s1 }],
+    xFmt: (v) => (v / T).toFixed(2) + 'T',
+  });
+  barChart($('chUnits'), {
+    cats: NAMES, groups: [{ name: '記憶媒体', values: sim.dev.map(d => d.np), color: C.mem }],
+    refs: initUnits, refName: '初期', yMax: sim.opt.npmax, yFixed: { max: 24, n: 4 }, label: '各場所の記憶媒体の枚数',
+    tipCat: (i) => `場所 ${NAMES[i]}`, fmt: (v) => v + ' 枚',
+  });
+}
+
+/* ---------- 再現実験 ---------- */
+const CONDS = [
+  { key: 'proposed', name: '提案手法', color: () => C.s1 },
+  { key: 'uniform', name: '一様に固定', color: () => C.s2 },
+  { key: 'adaptA', name: '(A) に合わせて固定', color: () => C.s3 },
+  { key: 'adaptB', name: '(B) に合わせて固定', color: () => C.s3, barOnly: true },
+  { key: 'none', name: '知識なし', ref: true },
+  { key: 'all', name: '全知識', ref: true },
+];
+let expRes = null, expRunning = false;
+function makeExpSim(key, memRatio = 0.5) {
+  const base = { robots: 4, memRatio, seed: 101, ratio: 'A' };
+  if (key === 'adaptA' || key === 'adaptB') {
+    const s = new Sim(Object.assign({}, base, { mode: 'proposed', ratio: key === 'adaptA' ? 'A' : 'B' }));
+    return { s, pre: 5 * T, after: () => { s.setMode('frozen'); s.opt.ratio = 'A'; s.t0 = s.t; s.base = s.achieved; } };
+  }
+  return { s: new Sim(Object.assign({}, base, { mode: key })), pre: 0 };
+}
+function runExperiment() {
+  if (expRunning) return;
+  expRunning = true; $('btnExp').disabled = true; $('btnExp').textContent = '計算中…';
+  const jobs = [];
+  for (const c of CONDS) jobs.push({ kind: 'time', key: c.key });
+  for (const r of [1, 2, 3, 4, 5]) for (const k of ['proposed', 'uniform']) jobs.push({ kind: 'sweep', key: k, r });
+  const res = { time: {}, sweep: { proposed: [], uniform: [] } };
+  const totalSteps = jobs.reduce((s, j) => s + (j.kind === 'time' ? 10 * T + (j.key.startsWith('adapt') ? 5 * T : 0) : 5 * T), 0);
+  let doneSteps = 0, ji = 0, cur = null;
+  const CH = 25000;
+  function tick() {
+    const t0 = performance.now();
+    while (performance.now() - t0 < 30) {
+      if (!cur) {
+        if (ji >= jobs.length) { finish(); return; }
+        const j = jobs[ji];
+        if (j.kind === 'time') { const m = makeExpSim(j.key); cur = { j, ...m, phase: m.pre ? 'pre' : 'run', pts: [], lastA: 0, blocks: [] }; }
+        else { cur = { j, s: new Sim({ robots: 4, memRatio: MEMS[j.r], seed: 202, ratio: 'A', mode: j.key }), phase: 'run' }; }
+      }
+      const s = cur.s;
+      if (cur.j.kind === 'time') {
+        if (cur.phase === 'pre') {
+          const n = Math.min(CH, cur.pre - s.t); s.step(n); doneSteps += n;
+          if (s.t >= cur.pre) { cur.after(); cur.phase = 'run'; cur.off = s.t; cur.base = s.achieved; cur.lastA = s.achieved; cur.mark = s.t; }
+          continue;
+        }
+        const off = cur.off || 0, base = cur.base || 0;
+        const rel = s.t - off;
+        if (rel >= 10 * T) {
+          res.time[cur.j.key] = { pts: cur.pts, blocks: cur.blocks };
+          cur = null; ji++; continue;
+        }
+        if (rel === 5 * T && !cur.switched) { s.opt.ratio = 'B'; cur.switched = true; }
+        const n = Math.min(T / 4, CH); s.step(n); doneSteps += n;
+        const r2 = s.t - off;
+        cur.pts.push([r2, s.perT()]);
+        if (r2 % T === 0) { cur.blocks.push(s.achieved - (cur.lastA != null ? cur.lastA : base)); cur.lastA = s.achieved; }
+      } else {
+        const n = Math.min(CH, (s.t < 2 * T ? 2 * T : 5 * T) - s.t); s.step(n); doneSteps += n;
+        if (s.t === 2 * T) cur.a2 = s.achieved;
+        if (s.t >= 5 * T) { res.sweep[cur.j.key].push([MEMS[cur.j.r], (s.achieved - cur.a2) / 3]); cur = null; ji++; }
+      }
+    }
+    $('expBar').style.width = (100 * doneSteps / totalSteps).toFixed(1) + '%';
+    setTimeout(tick, 0);
+  }
+  function finish() {
+    expRes = res; expRunning = false;
+    $('btnExp').disabled = false; $('btnExp').textContent = 'もう一度計算する'; $('expBar').style.width = '100%';
+    $('expEmpty').hidden = true; $('expCharts').hidden = false; $('expTableWrap').hidden = false;
+    renderExp();
+  }
+  setTimeout(tick, 0);
+}
+function avg(a) { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
+function renderExp() {
+  if (!expRes) return;
+  const R = expRes.time;
+  const ticks = []; for (let k = 0; k <= 10; k += 1) ticks.push([k * T, k + 'T']);
+  const series = [];
+  for (const c of CONDS) {
+    if (c.barOnly || !R[c.key]) continue;
+    const pts = R[c.key].pts.filter(p => p[0] >= T);
+    series.push(c.ref ? { name: c.name, pts, color: C.ref, dash: true, label: c.name, tipColor: C.ref } : { name: c.name, pts, color: c.color(), tipColor: c.color() });
+  }
+  const ymax = Math.max(...series.flatMap(se => se.pts.map(p => p[1])));
+  lineChart($('chExp1'), { xMax: 10 * T, yMax: ymax, xTicks: ticks, rightPad: 52, series, marks: [{ x: 5 * T, label: '(A)→(B)' }], xFmt: (v) => (v / T).toFixed(2) + 'T', label: '作業達成数の推移' });
+  $('lgExp1').innerHTML = series.map(se => `<span><i class="${se.dash ? 'dash' : ''}" style="background:${se.color}"></i>${se.name}</span>`).join('');
+  // 図8: 前（2-5T）後（6-10T）
+  const cats = CONDS.map(c => c.name);
+  const before = CONDS.map(c => R[c.key] ? avg(R[c.key].blocks.slice(1, 5)) : null);
+  const after = CONDS.map(c => R[c.key] ? avg(R[c.key].blocks.slice(5, 10)) : null);
+  barChart($('chExp2'), { cats: CONDS.map(c => ({ proposed: '提案', uniform: '一様', adaptA: '(A)固定', adaptB: '(B)固定', none: 'なし', all: '全知識' })[c.key]), groups: [{ name: '切り替え前 (A)', values: before, color: C.muted }, { name: '切り替え後 (B)', values: after, color: C.s1 }], yMax: Math.max(...before, ...after), label: '切り替え前後の平均', tipCat: (i) => cats[i] });
+  $('lgExp2').innerHTML = `<span><i style="background:${C.muted};height:10px;width:10px;border-radius:2px"></i>切り替え前 (A) 2–5T</span><span><i style="background:${C.s1};height:10px;width:10px;border-radius:2px"></i>切り替え後 (B) 6–10T</span>`;
+  // 図11
+  const sw = expRes.sweep, noneV = R.none ? avg(R.none.blocks.slice(1, 5)) : 0, allV = R.all ? avg(R.all.blocks.slice(1, 5)) : 0;
+  const s3 = [
+    { name: '提案手法', pts: sw.proposed.map(p => [p[0], p[1]]), color: C.s1, tipColor: C.s1 },
+    { name: '一様に固定', pts: sw.uniform.map(p => [p[0], p[1]]), color: C.s2, tipColor: C.s2 },
+    { name: '全知識', pts: [[1 / 6, allV], [5 / 6, allV]], color: C.ref, dash: true, label: '全知識', tipColor: C.ref },
+    { name: '知識なし', pts: [[1 / 6, noneV], [5 / 6, noneV]], color: C.ref, dash: true, label: 'なし', tipColor: C.ref },
+  ];
+  lineChart($('chExp3'), { xMax: 1, yMax: Math.max(allV, ...sw.proposed.map(p => p[1])), xTicks: [[1 / 6, '1/6'], [2 / 6, '1/3'], [3 / 6, '1/2'], [4 / 6, '2/3'], [5 / 6, '5/6']], rightPad: 46, series: s3, xFmt: (v) => '記憶媒体 ' + (v * 24).toFixed(0) + ' / 24 枚', label: '記憶媒体の量と作業達成数' });
+  $('lgExp3').innerHTML = s3.slice(0, 2).map(se => `<span><i style="background:${se.color}"></i>${se.name}</span>`).join('') + `<span><i class="dash"></i>全知識・知識なし</span>`;
+  // 表
+  let tb = '<thead><tr><th>条件</th><th>切り替え前 (A)</th><th>切り替え後 (B)</th><th>一様比（後）</th></tr></thead><tbody>';
+  const uAfter = after[1] || 1;
+  CONDS.forEach((c, i) => { tb += `<tr><td>${c.name}</td><td class="mono">${Math.round(before[i])}</td><td class="mono">${Math.round(after[i])}</td><td class="mono">${(after[i] / uAfter).toFixed(2)}</td></tr>`; });
+  tb += '</tbody>';
+  $('expTable').innerHTML = tb;
+}
+$('btnExp').addEventListener('click', runExperiment);
+
+/* ---------- 操作 ---------- */
+function setPressed(segId, v) { for (const b of $(segId).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === v)); }
+$('segMode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.mode = b.dataset.v; setPressed('segMode', state.mode); newSim(); });
+$('segRatio').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b || b.dataset.v === state.ratio) return;
+  state.ratio = b.dataset.v; setPressed('segRatio', state.ratio);
+  sim.setRatio(state.ratio); ratioMarks.push({ t: sim.t, label: '→(' + (state.ratio === 'U' ? '一様' : state.ratio) + ')' });
+  renderLive();
+});
+function setRunning(v) { running = v; $('btnPlay').textContent = running ? '一時停止' : '再生'; }
+$('btnPlay').addEventListener('click', () => setRunning(!running));
+$('btnStep').addEventListener('click', () => { const target = (Math.floor(sim.t / T) + 1) * T; while (sim.t < target) { sim.step(Math.min(2000, target - sim.t)); recordLive(); } renderAll(); });
+$('btnReset').addEventListener('click', () => newSim());
+function speedLabel() { $('outSpeed').textContent = `${SPEEDS[speedIdx].toLocaleString()} step/フレーム`; }
+$('rngSpeed').addEventListener('input', (e) => { speedIdx = +e.target.value; speedLabel(); });
+$('rngRobots').addEventListener('input', (e) => { state.robots = +e.target.value; $('outRobots').textContent = state.robots + ' 台'; });
+$('rngRobots').addEventListener('change', () => newSim());
+$('rngMem').addEventListener('input', (e) => { state.mem = +e.target.value; $('outMem').textContent = MEMLAB[state.mem]; });
+$('rngMem').addEventListener('change', () => newSim());
+const optHtml = NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('');
+$('selPlace').innerHTML = optHtml; $('selDest').innerHTML = optHtml;
+$('selPlace').addEventListener('change', (e) => { selPlace = +e.target.value; renderDevice(); updateMap(); });
+$('selDest').addEventListener('change', (e) => { selDest = +e.target.value; renderDevice(); updateMap(); });
+
+function recordLive() {
+  const last = livePts[livePts.length - 1];
+  if (sim.t - last[0] >= T / 20) livePts.push([sim.t, sim.perT()]);
+  if (livePts.length > 4000) livePts.splice(1, 1000);
+}
+function renderAll(full) {
+  updateMap(); renderKpis(); renderDevice(); renderLive();
+  $('selPlace').value = selPlace; $('selDest').value = selDest;
+}
+const reflow = () => { renderLive(); if (expRes) renderExp(); };
+let rzT = null; new ResizeObserver(() => { clearTimeout(rzT); rzT = setTimeout(reflow, 120); }).observe(document.querySelector('.charts'));
+const themeChange = () => { readColors(); renderAll(); if (expRes) renderExp(); };
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeChange);
+new MutationObserver(themeChange).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+let frame = 0;
+function loop() {
+  if (running) {
+    const n = SPEEDS[speedIdx], t0 = performance.now();
+    let done = 0;
+    while (done < n && performance.now() - t0 < 12) { const k = Math.min(500, n - done); sim.step(k); done += k; recordLive(); }
+  }
+  updateMap();
+  frame++;
+  if (frame % 10 === 0) { renderKpis(); renderDevice(); }
+  if (frame % 30 === 0) renderLive();
+  requestAnimationFrame(loop);
+}
+buildMap(); speedLabel(); setRunning(running); newSim(); requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
