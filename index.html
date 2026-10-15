@@ -1,0 +1,1955 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>自己再生する群ロボット</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Mishra, Semwal, Nair (GECCO'18) のエピジェネティック・トラッキングによる群ロボットの形状形成と再生を、司令塔なし・近傍通信のみのエージェントとして再現するシミュレータ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Shippori+Mincho+B1:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: 実験台（アリーナ）を主役に、右に「群れの内部状態」を読む計器盤。下に論文の解説。 */
+:root {
+  --bg: #eceee9;
+  --surface: #f7f8f5;
+  --arena: #e3e6df;
+  --grid: #d3d8cf;
+  --ink: #18201c;
+  --muted: #59655e;
+  --line: #cfd5cc;
+  --accent: #1d6b58;
+  --accent-ink: #ffffff;
+  --cut: #c23b2e;
+  --st-queued: #c98634;
+  --st-search: #7552c0;
+  --st-inactive: #2c3d93;
+  --st-active: #d23f36;
+  --st-quasi: #8d883a;
+  --st-stable: #3a8546;
+  --st-danger: #e0a114;
+  --st-leader: #c13489;
+  --robot-edge: #18201c;
+  --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121714; --surface: #1a201c; --arena: #161c18; --grid: #232b26;
+    --ink: #e4eae5; --muted: #9aa69f; --line: #2d3731; --accent: #5cc3a5; --accent-ink: #0d1411; --cut: #f0725f;
+    --st-queued: #e5a453; --st-search: #a487ee; --st-inactive: #7f93f2; --st-active: #f46a5f;
+    --st-quasi: #c7c062; --st-stable: #6cc479; --st-danger: #f5c142; --st-leader: #ee6cb8; --robot-edge: #0b0f0d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121714; --surface: #1a201c; --arena: #161c18; --grid: #232b26;
+  --ink: #e4eae5; --muted: #9aa69f; --line: #2d3731; --accent: #5cc3a5; --accent-ink: #0d1411; --cut: #f0725f;
+  --st-queued: #e5a453; --st-search: #a487ee; --st-inactive: #7f93f2; --st-active: #f46a5f;
+  --st-quasi: #c7c062; --st-stable: #6cc479; --st-danger: #f5c142; --st-leader: #ee6cb8; --robot-edge: #0b0f0d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--font-body); font-size: 14px; line-height: 1.6; margin: 0; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; display: flex; flex-direction: column; gap: 20px; }
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
+header.top h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 3.2vw, 34px); line-height: 1.2; margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+header.top .cite { color: var(--muted); font-size: 13px; max-width: 62ch; }
+header.top .cite a { color: var(--accent); }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 12px; cursor: pointer; min-height: 34px; }
+button:hover, select:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; min-width: 92px; }
+button.toggle[aria-pressed="true"] { background: var(--cut); border-color: var(--cut); color: #fff; }
+button .k { font-family: var(--font-mono); font-size: 11px; opacity: 0.7; margin-left: 4px; }
+label.ctl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+label.ctl output { font-family: var(--font-mono); color: var(--ink); min-width: 3.2em; font-variant-numeric: tabular-nums; }
+input[type="range"] { accent-color: var(--accent); width: 110px; }
+input[type="checkbox"] { accent-color: var(--accent); }
+
+.arena { position: relative; border: 1px solid var(--line); border-radius: var(--radius); background: var(--arena); overflow: hidden; height: min(68vh, 640px); min-height: 360px; touch-action: none; }
+.arena canvas { display: block; width: 100%; height: 100%; }
+.arena.cutting { cursor: crosshair; }
+.hud { position: absolute; left: 10px; top: 8px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
+.hud b { color: var(--ink); font-weight: 500; }
+.hint { position: absolute; left: 10px; bottom: 8px; right: 130px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; border: 1px solid var(--robot-edge); }
+.options { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+aside.panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card h2 { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 0; letter-spacing: 0.02em; }
+.card .sub { font-size: 12px; color: var(--muted); margin: 0; }
+.counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.count { display: flex; flex-direction: column; gap: 0; padding: 5px 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); }
+.count .n { font-family: var(--font-mono); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.count .l { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.prow { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12px; }
+.prow .bar { grid-column: 1 / -1; height: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; display: flex; }
+.prow .bar i { display: block; height: 100%; }
+.prow .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.dfa svg { width: 100%; height: auto; display: block; }
+.inspect dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 13px; }
+.inspect dt { color: var(--muted); }
+.inspect dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.nbtable { max-height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 2px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+td.mono, th.mono { font-family: var(--font-mono); }
+tr.hl td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.gene-wrap { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.bitmap { display: grid; gap: 1px; user-select: none; }
+.bitmap .c { width: 15px; height: 15px; font-family: var(--font-mono); font-size: 10px; display: flex; align-items: center; justify-content: center; color: var(--muted); border-radius: 2px; background: var(--bg); }
+.bitmap .c.on { background: var(--ink); color: var(--surface); }
+.bitmap .c.origin { background: var(--st-active); color: #fff; }
+.bitmap.edit .c { cursor: pointer; }
+.genetable { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; flex: 1 1 140px; min-width: 0; }
+.log { max-height: 220px; overflow: auto; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.log div { display: grid; grid-template-columns: 4.6em 10px 1fr; gap: 6px; align-items: baseline; }
+.log time { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.log .dot { width: 8px; height: 8px; transform: translateY(1px); }
+.empty { color: var(--muted); font-size: 13px; }
+
+section.explain { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 32px; border-top: 1px solid var(--line); padding-top: 20px; }
+@media (max-width: 860px) { section.explain { grid-template-columns: minmax(0, 1fr); } }
+section.explain h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 6px; letter-spacing: 0.02em; text-wrap: balance; }
+section.explain h3 { font-family: var(--font-display); font-size: 16px; margin: 14px 0 4px; }
+section.explain p, section.explain li { max-width: 66ch; }
+section.explain ol, section.explain ul { padding-left: 1.3em; margin: 4px 0; display: flex; flex-direction: column; gap: 4px; }
+section.explain code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+.col { min-width: 0; }
+details { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; background: var(--surface); }
+details + details { margin-top: 8px; }
+summary { cursor: pointer; font-weight: 700; }
+.params { width: auto; }
+.params td:first-child { color: var(--muted); }
+.figure { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 10px; overflow-x: auto; }
+.figure svg { display: block; max-width: 100%; height: auto; }
+.note { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Epigenetic Tracking × Kilobot swarm</div>
+      <h1>自己再生する群ロボット</h1>
+    </div>
+    <p class="cite">
+      R. S. Mishra, T. Semwal, S. B. Nair, “A Distributed Epigenetic Shape Formation and Regeneration Algorithm for a Swarm of Robots,” GECCO ’18 Companion, Kyoto (2018).
+      <a href="paper/Mishra2018_EpigeneticShapeFormation_arXiv1810.11935.pdf">論文 PDF</a> ·
+      <a href="https://arxiv.org/abs/1810.11935" target="_blank" rel="noopener">arXiv:1810.11935</a>
+    </p>
+  </header>
+
+  <div class="main">
+    <div class="stage">
+      <div class="toolbar" role="toolbar" aria-label="シミュレーションの操作">
+        <div class="group">
+          <button id="btnPlay" class="primary" type="button">一時停止</button>
+          <button id="btnStep" type="button" title="1 tick 進める">1 歩</button>
+          <button id="btnReset" type="button">最初から</button>
+        </div>
+        <div class="group">
+          <label class="ctl" for="selShape">形状
+            <select id="selShape">
+              <option value="T">T（論文 図1）</option>
+              <option value="dumbbell">ダンベル（図8）</option>
+              <option value="starfish">ヒトデ（図9）</option>
+              <option value="custom">自作（右の遺伝子パネルで編集）</option>
+            </select>
+          </label>
+        </div>
+        <div class="group">
+          <label class="ctl" for="rngSpeed">速度 <input id="rngSpeed" type="range" min="1" max="60" step="1" value="6"><output id="outSpeed">×6</output></label>
+          <label class="ctl" for="rngLoss">メッセージ損失 <input id="rngLoss" type="range" min="0" max="0.5" step="0.05" value="0.2"><output id="outLoss">20%</output></label>
+        </div>
+        <div class="group">
+          <button id="btnCut" class="toggle" type="button" aria-pressed="false">線を引いて切る</button>
+          <button id="btnCutV" type="button">縦に切る</button>
+          <button id="btnCutH" type="button">横に切る</button>
+        </div>
+      </div>
+
+      <div class="arena" id="arena">
+        <canvas id="cv" aria-label="群ロボットのアリーナ。各円が 1 台の Kilobot。色は状態を表す"></canvas>
+        <div class="hud" id="hud"></div>
+        <div class="hint" id="hint">ロボットをクリックすると、そのロボットが「知っていること」を右に表示します。</div>
+      </div>
+
+      <div class="legend" id="legend"></div>
+      <div class="options">
+        <label><input type="checkbox" id="optGhost" checked> 目標の格子点</label>
+        <label><input type="checkbox" id="optLinks" checked> 隣接リンク</label>
+        <label><input type="checkbox" id="optTrails" checked> 移動の軌跡</label>
+        <label><input type="checkbox" id="optIds"> ID を表示</label>
+        <label title="論文にはない補助ルール（穴を作らない・くぼみ優先・出発順など）"><input type="checkbox" id="optAux" checked> 補助ルール</label>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="card">
+        <h2>群れの状態</h2>
+        <div class="counts" id="counts"></div>
+        <div class="progress" id="progress"></div>
+      </div>
+
+      <div class="card dfa">
+        <h2>8 状態の有限オートマトン</h2>
+        <p class="sub">数字はその状態にいる台数。直近に起きた遷移の矢印が太く光ります。</p>
+        <svg id="dfa" viewBox="0 0 360 262" role="img" aria-label="Queued から Leader までの状態遷移図"></svg>
+      </div>
+
+      <div class="card inspect">
+        <h2>選択中のロボット</h2>
+        <div id="inspect"><p class="empty">アリーナのロボットをクリックしてください。各ロボットが判断に使うのは、ここに出る自分の記憶と、通信範囲（点線の円）から届いたメッセージだけです。</p></div>
+      </div>
+
+      <div class="card">
+        <h2>遺伝子 <span class="sub" id="geneSub"></span></h2>
+        <p class="sub" id="geneHelp">二値画像の 1 がロボットの居場所。赤が原点 (0,0)。各行は Tag (X,Y)、Flag F、許される近傍数 NN。</p>
+        <div class="gene-wrap">
+          <div class="bitmap" id="bitmap"></div>
+          <div class="genetable"><table id="genetable"><thead><tr><th class="mono">X</th><th class="mono">Y</th><th class="mono">F</th><th class="mono">NN</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="group" id="editTools" hidden>
+          <button id="btnApplyEdit" type="button" class="primary">この形で開始</button>
+          <button id="btnClearEdit" type="button">消去</button>
+          <span class="sub" id="editCount"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>出来事</h2>
+        <div class="log" id="log" aria-live="off"></div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="explain">
+    <div class="col">
+      <h2>論文が示したこと</h2>
+      <p>生物の細胞は、同じ遺伝子を持ちながら分裂（mitosis）と細胞死（apoptosis）を繰り返して体の形をつくり、トカゲの尾のように失った部分を再生します。Fontana のエピジェネティック・トラッキング（ET）はこの過程のモデルです。Mishra らはこれを Kilobot の群れに移しました。全員が<strong>同じプログラムと同じ遺伝子</strong>を持ち、<strong>司令塔なし</strong>で、<strong>赤外線で近くの仲間とだけ</strong>通信しながら、二値画像で与えた形を三角格子の上に組み上げます。形が切られると、残った断片がそれぞれ自分の台数に合わせた縮小版を作り直します。</p>
+
+      <h3>1. 遺伝子をつくる</h3>
+      <p>正方格子の画像を、上の行ほど半格子ずつ左へずらして<strong>斜交座標系（SCS）</strong>の三角格子にします。こうすると 6 近傍がすべて等距離になります。画素ごとに <span class="mono">Tag=(X,Y)</span>、<span class="mono">Flag F</span>（形の内側なら 1）、<span class="mono">NN</span>（その場所で持つべき近傍数 0〜6）を並べた表が遺伝子です。NN は画素 (i,j) の <span class="mono">(i−1,j)(i−1,j+1)(i,j+1)(i+1,j)(i+1,j−1)(i,j−1)</span> にある 1 の数です。</p>
+
+      <h3>2. 8 つの状態</h3>
+      <ul>
+        <li><b>Queued</b>: 待機列。放送で最小 ID を見つけ、その 1 台だけが列を離れる。</li>
+        <li><b>Search</b>: 形の周辺をなぞって移動し、入れる格子点を探す。</li>
+        <li><b>Inactive</b>: 定着したが、隣の Active が Stable になるまで待つ。</li>
+        <li><b>Active</b>: 近傍数が NN に達するまで新入りを受け入れる。隣に TS の小さい Active がいれば <b>Quasi</b> に退いて一定時間待つ。</li>
+        <li><b>Stable</b>: 完成した部分。近傍数を監視し続け、減れば <b>Danger</b>。</li>
+        <li><b>Danger</b> → <b>Leader</b>: 最小 ID の 1 台がリーダーになり、再生を指揮する。</li>
+      </ul>
+
+      <h3>3. Timestep（TS）勾配</h3>
+      <p>定着した順番を表す値です。探索中のロボットは、聞こえる Active のうち TS が最小のものの隣に入ります。古い個体の周りから埋めることで、穴や隙間を防ぎます。</p>
+
+      <h3>4. 局所化</h3>
+      <p>三角測量の式は使いません。距離 d にいる近傍の座標から、自分が入れる格子点を判断します（論文 図4）。その格子点の Flag が 1 で、隣に Active がいるときだけ定着し、遺伝子から NN を読んで自分の座標を発信し始めます。</p>
+
+      <h3>5. 再生（Algorithm 2）</h3>
+      <ol>
+        <li><b>リーダー選出</b>: Danger の個体が ID を放送し、より小さい ID を受け取ったら退く。一定時間より小さい ID が届かなかった 1 台がリーダー。</li>
+        <li><b>人口調査</b>: リーダーが断片の外周を一周し、周縁の個体のタグを集める。それをビットマップに写し、閉じた領域の 1 を数えて残りの台数 n を知る。</li>
+        <li><b>縮小画像</b>: 失った台数 K=N−n だけ、現在のビットマップの境界の 1 を順に消す。三角格子が不安定になる消し方は飛ばす。</li>
+        <li><b>共有とシード化</b>: 新しい画像を断片に共有し、リーダーと隣の 2 台が新しいシードになる。座標が新しい形に合う個体は Inactive、それ以外は Queued に戻り、形成をやり直す。</li>
+      </ol>
+      <p class="note">論文の結果: Kilombo シミュレータで T の形成に 2 時間 50 分 8 秒。通信損失確率 0.2 では、遷移を聞き逃した個体が誤った状態に残る（図6）。穴のある形（O など）は苦手。</p>
+    </div>
+
+    <div class="col">
+      <h2>このシミュレータの作り</h2>
+      <p>すべてのロボットは同じ <span class="mono">think()</span> を、毎 tick ランダムな順番で非同期に実行します。判断に使えるのは、自分の記憶と、通信範囲内から確率 1−損失率 で届いたメッセージだけです。メッセージの中身は状態、タグ、TS、形状の版、最小 ID 推定などです。描画と統計はシミュレータ側の神の視点ですが、ロボットの判断には使っていません。</p>
+      <table class="params">
+        <tbody>
+          <tr><td>Kilobot の直径</td><td class="mono">33 mm</td></tr>
+          <tr><td>格子間隔 d</td><td class="mono">40 mm</td></tr>
+          <tr><td>赤外線通信の届く距離</td><td class="mono">85 mm（2 つ先の格子点まで）</td></tr>
+          <tr><td>移動速度</td><td class="mono">10 mm/s（1 tick = 0.2 s）</td></tr>
+          <tr><td>メッセージ損失率</td><td class="mono">0.2（論文の実験値。上で変更可）</td></tr>
+          <tr><td>近傍が消えたとみなす時間</td><td class="mono">15 tick（3 s）連続で届かない</td></tr>
+          <tr><td>Quasi の待ち時間 T</td><td class="mono">15 tick</td></tr>
+          <tr><td>リーダー確定までの静穏時間</td><td class="mono">30 tick</td></tr>
+        </tbody>
+      </table>
+
+      <div class="figure" aria-label="斜交座標系の図">
+        <svg viewBox="0 0 520 150" role="img" aria-label="正方格子の画像を、上の行ほど左にずらして三角格子にする">
+          <g id="skewFig"></g>
+        </svg>
+      </div>
+
+      <h3>論文どおりに実装したところ</h3>
+      <ul>
+        <li>二値画像 → SCS → 遺伝子 (Tag, F, NN) の計算。原点は画像中央の 1。</li>
+        <li>8 状態の遷移、TS の継承（隣の Active の TS+1）、Quasi への退避と復帰。</li>
+        <li>待機列からの出発（最小 ID を放送で決め、一定時間後に次へ）。</li>
+        <li>損傷検出（Stable の近傍数が NN 未満）、最小 ID によるリーダー選出、外周の一周による人口調査、境界を削る縮小、新シードからの再形成。</li>
+      </ul>
+
+      <details>
+        <summary>論文に書かれていない部分の補い方（補助ルール）</summary>
+        <ul>
+          <li>近傍の<strong>相対位置（距離と方位）</strong>が測れるものとしました。実機の Kilobot は距離しか測れません。</li>
+          <li>入る格子点を決めたら、近傍の座標から推定した格子上の短い経路（最大 5 歩）を通って入ります。</li>
+          <li>各ロボットは、自分の 6 近傍のどこが埋まっているかを 6 ビットで発信します。探索中の個体は、これで少し広い占有地図を持ちます。</li>
+          <li><b>穴を作らない</b>: 空いたセルが外とつながらなくなる位置には入りません。周りが 4 方向以上埋まったくぼみは、TS 最小の規則の例外として先に埋めます。移動中の仲間も閉じ込めません。</li>
+          <li>Inactive が遷移の瞬間を聞き逃しても、同じ形の Stable の隣で 60 tick 待ち、隣に Active がいなければ Active になります。</li>
+          <li>待機列は「外側の個体」から出発します。最小 ID の規則はその中で守ります。こうしないと、細い腕の先の個体が取り残されて迷子になります。</li>
+          <li>縮小形状は、残った個体と最も重なる位置と向き（60° 刻み）に置きます。論文の「座標が新しい形に合う個体は Inactive」を素直に読んだ実装です。</li>
+          <li>縮小版を作れない（シードにできる三角形がない）ときは、残った形をそのまま新しい形とします。</li>
+          <li>リーダー選出と新しい形状の受け取りは、接している個体どうしで中継します。切断で分かれたかたまりごとに再生するためです。</li>
+          <li>迷子になった探索個体は、最後に聞こえた仲間の方へ戻ります。長く仲間が聞こえなければ、近くの別の群れに加わります。</li>
+          <li>切断では、線の片側を通信範囲の外まで引き離します。論文と同じく、線上の個体は失いません。</li>
+        </ul>
+        <p class="note">「補助ルール」のチェックを外すと、穴防止、くぼみ優先、外側からの出発、遷移の聞き逃しの救済が止まります。論文の規則だけで動かしたときの違いを観察できます。</p>
+      </details>
+      <details>
+        <summary>観察のポイント</summary>
+        <ul>
+          <li>最初の 3 台（シード）から形が育ちます。TS の小さい Active（赤）の周りから埋まり、Quasi（黄土色）が順番待ちをします。</li>
+          <li>損失率を 0 にすると速く、0.4 以上にすると遅くなります。誰も中央から指示していないのに、形は崩れません。</li>
+          <li>完成後に「横に切る」を押すと、両方の断片で Danger（黄）が出ます。それぞれリーダー（桃色）を選び、外周を一周してから縮小版を作り直します。新しい形は 60° 単位で向きが変わることがあります（論文 図7 と同じ）。</li>
+          <li>ロボットを選ぶと、そのロボットの記憶にある近傍の表が見えます。群れ全体の地図は、誰も持っていません。</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ===== ET Swarm engine =====
+ * Mishra, Semwal, Nair (2018) "A Distributed Epigenetic Shape Formation and
+ * Regeneration Algorithm for a Swarm of Robots" (GECCO'18 Companion, arXiv:1810.11935)
+ * の状態機械 (Queued/Search/Inactive/Active/Quasi/Stable/Danger/Leader) を
+ * 個体ごとに独立して動かすエージェントシミュレーション。
+ * 各ロボットが判断に使うのは「自分の記憶」と「通信範囲内の近傍から届いたメッセージ」だけ。
+ */
+(function (global) {
+'use strict';
+
+const SQ = Math.sqrt(3) / 2;
+// 斜交座標系(SCS)の 6 近傍。論文の (i-1,j),(i-1,j+1),(i,j+1),(i+1,j),(i+1,j-1),(i,j-1) に対応
+const NB = [[0, 1], [1, 1], [1, 0], [0, -1], [-1, -1], [-1, 0]];
+const K = (x, y) => x + ',' + y;
+const unK = (k) => k.split(',').map(Number);
+
+const DEF = {
+  d: 40,          // 格子間隔 [mm]
+  R: 16.5,        // Kilobot 半径 [mm] (直径 33mm)
+  comm: 85,       // 赤外線通信の到達距離 [mm]
+  v: 2.0,         // 移動速度 [mm/tick]  (1 tick = 0.2 s → 10 mm/s)
+  vDock: 1.4,
+  turn: 0.22,     // 最大旋回 [rad/tick]
+  loss: 0.2,      // メッセージ損失確率 (論文の実験値 0.2)
+  noise: 1.0,     // 距離計測ノイズ [mm]
+  W_PRESENT: 15,  // この tick 数メッセージが届かなければ近傍が消えたとみなす
+  W_SEEN: 5,
+  QMAX: 60,       // 最小 ID 伝搬のホップ上限
+  RELEASE: 20,    // Queued → Search までの待ち時間 (論文の "predetermined amount of time")
+  QUASI_T: 15,    // Quasi 状態の待ち時間 T
+  T_ELECT: 30,    // これだけの間より小さい ID を聞かなければリーダー
+  DOCK_TIMEOUT: 220,
+  CAPTURE: 1.15,
+  TICK_SEC: 0.2,
+  cutBand: 0,     // 切断線上で失われるロボットの幅 [mm]（論文の切断は分離のみなので 0）
+  noSeal: true,   // 補助ルール: 空きセルを完全に塞ぐ位置には入らない（論文には無い追加ルール）
+};
+
+const STATES = ['Queued', 'Search', 'Inactive', 'Active', 'Quasi', 'Stable', 'Danger', 'Leader'];
+const PLACED = new Set(['Inactive', 'Active', 'Quasi', 'Stable', 'Danger']);
+const STATIC = new Set(['Queued', 'Inactive', 'Active', 'Quasi', 'Stable', 'Danger']);
+
+const PRESETS = {
+  T: {
+    name: 'アルファベット T（論文 図1）',
+    rows: ['000000000000', '011111111110', '011111111110', '011111111110',
+      '000011100000', '000011100000', '000011100000', '000000000000'],
+  },
+  dumbbell: {
+    name: 'ダンベル（論文 図8）',
+    rows: ['0000000000000', '0000000001110', '0000000011110', '0000000111110',
+      '0000000111100', '0000000111000', '0000000110000', '0000001100000',
+      '0000001100000', '0000011000000', '0000011000000', '0000110000000',
+      '0000110000000', '0001110000000', '0011110000000', '0111110000000',
+      '0111100000000', '0111000000000', '0000000000000'],
+  },
+  starfish: {
+    name: 'ヒトデ（論文 図9）',
+    rows: ['00000000000000', '00000000010000', '00000000110000', '00000000110000',
+      '00000001110011', '01111111111110', '00111111111100', '00000111110000',
+      '00000111100000', '00001101100000', '00011001100000', '00110001100000',
+      '01100001100000', '00000000100000', '00000000000000'],
+  },
+};
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- 遺伝子 (gene) ---------- */
+function latLocal(X, Y) { return [X - 0.5 * Y, SQ * Y]; }   // 単位: 格子間隔
+
+function makeGene(list) {
+  const set = new Set(list.map(c => K(c[0], c[1])));
+  const cells = new Map();
+  for (const [X, Y] of list) {
+    let nn = 0;
+    for (const [dx, dy] of NB) if (set.has(K(X + dx, Y + dy))) nn++;
+    cells.set(K(X, Y), { X, Y, NN: nn });
+  }
+  return { cells, size: cells.size };
+}
+
+function geneFromBitmap(rows) {
+  const H = rows.length, W = rows[0].length, ones = [];
+  for (let i = 0; i < H; i++) for (let j = 0; j < W; j++) if (rows[i][j] === '1') ones.push([i, j]);
+  if (!ones.length) return { gene: makeGene([]), origin: null };
+  const ci = (H - 1) / 2, cj = (W - 1) / 2;
+  let best = ones[0], bd = Infinity;
+  for (const o of ones) {
+    const dd = (o[0] - ci) ** 2 + (o[1] - cj) ** 2;
+    if (dd < bd - 1e-9) { bd = dd; best = o; }
+  }
+  const [i0, j0] = best;
+  // Tag: X = 列 - 原点列, Y = 原点行 - 行 (上が +)
+  const gene = makeGene(ones.map(([i, j]) => [j - j0, i0 - i]));
+  return { gene, origin: [i0, j0] };
+}
+
+function nbKeys(X, Y) { return NB.map(([dx, dy]) => K(X + dx, Y + dy)); }
+
+function connected(set) {
+  if (set.size === 0) return true;
+  const start = set.values().next().value, seen = new Set([start]), st = [start];
+  while (st.length) {
+    const [X, Y] = unK(st.pop());
+    for (const k of nbKeys(X, Y)) if (set.has(k) && !seen.has(k)) { seen.add(k); st.push(k); }
+  }
+  return seen.size === set.size;
+}
+
+function hasTriangle(set, k) {
+  const [X, Y] = unK(k);
+  const ks = nbKeys(X, Y);
+  for (let i = 0; i < 6; i++) if (set.has(ks[i]) && set.has(ks[(i + 1) % 6])) return true;
+  return false;
+}
+
+/* 論文 3.1.2 (3): 現在のビットマップの境界の 1 を順に削除して縮小版を作る。
+ * 三角格子が不安定になる削除（連結が切れる・三角形を作れない個体が出る）は飛ばす。 */
+function scaleDown(list, n) {
+  const set = new Set(list.map(c => K(c[0], c[1])));
+  const stable = (s) => {
+    if (!connected(s)) return false;
+    if (s.size < 3) return true;
+    for (const k of s) if (!hasTriangle(s, k)) return false;
+    return true;
+  };
+  let guard = 0;
+  while (set.size > n && guard++ < 500) {
+    let cx = 0, cy = 0;
+    for (const k of set) { const [X, Y] = unK(k); const p = latLocal(X, Y); cx += p[0]; cy += p[1]; }
+    cx /= set.size; cy /= set.size;
+    const boundary = [];
+    for (const k of set) {
+      const [X, Y] = unK(k);
+      if (nbKeys(X, Y).some(q => !set.has(q))) {
+        const p = latLocal(X, Y);
+        boundary.push({ k, a: Math.atan2(p[1] - cy, p[0] - cx) });
+      }
+    }
+    boundary.sort((a, b) => a.a - b.a);
+    const order = [];
+    for (let i = 0; i < boundary.length; i += 2) order.push(boundary[i].k);
+    for (let i = 1; i < boundary.length; i += 2) order.push(boundary[i].k);
+    let removed = false;
+    for (const k of order) {
+      if (set.size <= n) break;
+      set.delete(k);
+      if (stable(set)) removed = true; else set.add(k);
+    }
+    if (!removed) {
+      for (const k of [...set]) {
+        set.delete(k);
+        if (connected(set)) { removed = true; break; }
+        set.add(k);
+      }
+      if (!removed) break;
+    }
+  }
+  return [...set].map(unK);
+}
+
+function rot60(X, Y, k) { for (let i = 0; i < k; i++) { const nx = X - Y, ny = X; X = nx; Y = ny; } return [X, Y]; }
+
+function pointInPoly(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+const hexDist = (dx, dy) => Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dx - dy));
+const angNorm = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ---------- シミュレーション ---------- */
+class Sim {
+  constructor(rows, opts = {}) {
+    this.P = Object.assign({}, DEF, opts.params || {});
+    this.seed = opts.seed || 7;
+    this.reset(rows);
+  }
+
+  log(msg, kind = 'info', id = null) {
+    this.events.push({ t: this.t, msg, kind, id });
+    if (this.events.length > 400) this.events.shift();
+  }
+
+  reset(rows) {
+    const P = this.P;
+    this.rng = mulberry32(this.seed);
+    this.rows = rows.slice();
+    const g = geneFromBitmap(rows);
+    this.gene0 = g.gene; this.origin = g.origin;
+    this.t = 0; this.robots = []; this.events = []; this.flash = {}; this.frames = [];
+    this.done = {}; this.cutMarks = []; this.removed = [];
+    this.counter = {};
+    const cells = [...this.gene0.cells.values()];
+    const N = cells.length;
+    this.N = N;
+    if (N < 3) { this.log('形状のセルが 3 個未満なので形成できません', 'warn'); return; }
+
+    const frame = { id: 0, ox: 0, oy: 0, phi: 0 };
+    this.frames.push(frame);
+    const pos = (X, Y) => { const p = latLocal(X, Y); return [p[0] * P.d, p[1] * P.d]; };
+    let cx = 0, cy = 0;
+    for (const c of cells) { const p = pos(c.X, c.Y); cx += p[0]; cy += p[1]; }
+    cx /= N; cy /= N;
+
+    // シード: 重心から遠く、三角形を作れるセル（論文ではランダムに選ぶ）
+    const cand = cells.map(c => { const p = pos(c.X, c.Y); return { c, p, dd: Math.hypot(p[0] - cx, p[1] - cy) }; })
+      .sort((a, b) => b.dd - a.dd);
+    let seed = null;
+    for (const o of cand) {
+      const ks = nbKeys(o.c.X, o.c.Y);
+      for (let i = 0; i < 6; i++) {
+        if (this.gene0.cells.has(ks[i]) && this.gene0.cells.has(ks[(i + 1) % 6])) { seed = { o, a: ks[i], b: ks[(i + 1) % 6] }; break; }
+      }
+      if (seed) break;
+    }
+    if (!seed) { this.log('三角形を作れるセルがないため形成できません', 'warn'); return; }
+    this.seedTags = [K(seed.o.c.X, seed.o.c.Y), seed.a, seed.b];
+
+    // 待機列 (Queued) を 2 列のリボン状に並べる。遠い端ほど ID が小さい
+    const sites = cells.map(c => pos(c.X, c.Y));
+    const Nq = N - 3, s = 36;
+    const base = Math.atan2(seed.o.p[1] - cy, seed.o.p[0] - cx);
+    let ribbon = null;
+    for (const off of [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4, 1.75, -1.75, 2.1, -2.1, 2.45, -2.45, Math.PI]) {
+      const a = base + off, ux = Math.cos(a), uy = Math.sin(a), wx = -uy, wy = ux;
+      const pts = [];
+      for (let k = 0; k < Nq; k++) {
+        const col = Math.floor(k / 2), row = k % 2;
+        const along = 1.75 * P.d + col * s + row * s / 2;
+        const perp = (row - 0.5) * s * SQ;
+        pts.push([seed.o.p[0] + ux * along + wx * perp, seed.o.p[1] + uy * along + wy * perp]);
+      }
+      let ok = true;
+      for (const q of pts) for (const sp of sites) if (Math.hypot(q[0] - sp[0], q[1] - sp[1]) < 1.6 * P.d) { ok = false; break; }
+      if (ok) { ribbon = pts; break; }
+    }
+    if (!ribbon) ribbon = [];
+
+    const shape0 = { ver: 0, sid: '0', gene: this.gene0, leaderId: null, leaderTag: null, seeds: [], tsMap: null };
+    for (let k = 0; k < ribbon.length; k++) {
+      const r = this.makeRobot(Nq - 1 - k, ribbon[k][0], ribbon[k][1], shape0);
+      r.state = 'Queued';
+      this.robots.push(r);
+    }
+    const tsInit = [1, 2, 2], stInit = ['Active', 'Inactive', 'Inactive'];
+    this.seedTags.forEach((tk, i) => {
+      const [X, Y] = unK(tk); const p = pos(X, Y);
+      const r = this.makeRobot(Nq + i, p[0], p[1], shape0);
+      r.state = stInit[i]; r.tag = [X, Y]; r.ts = tsInit[i]; r.nn = this.gene0.cells.get(tk).NN; r.frameId = 0;
+      r.seed = true;
+      this.robots.push(r);
+    });
+    this.robots.sort((a, b) => a.id - b.id);
+    this.byId = new Map(this.robots.map(r => [r.id, r]));
+    this.log(`遺伝子を計算: ${N} セル。シード 3 台 (R${Nq}, R${Nq + 1}, R${Nq + 2}) を配置、残り ${Nq} 台は待機列 (Queued)`, 'info');
+  }
+
+  makeRobot(id, x, y, shape) {
+    return {
+      id, x, y, th: this.rng() * Math.PI * 2, state: 'Queued', alive: true,
+      tag: null, ts: 0, nn: 0, ver: shape.ver, gene: shape.gene, shape,
+      nbr: new Map(), inbox: [],
+      qid: null, qh: 0, qSince: null,
+      eid: null, ever: -1, eChanged: 0, lost: false, frozen: false,
+      timer: 0, dock: null, black: new Map(), exit: 0, wait: 0, noYield: 0,
+      phase: null, tour: null, home: null,
+      sawStab: false, occ6: 0, hop: 99, edge: false, mx: 0, my: 0, trail: [], frameId: null, slide: null,
+      since: 0, seed: false, count: 0, halted: false,
+    };
+  }
+
+  setState(r, s, note) {
+    if (r.state === s) return;
+    const k = r.state + '>' + s;
+    this.flash[k] = this.t;
+    this.counter[k] = (this.counter[k] || 0) + 1;
+    r.state = s; r.since = this.t;
+    if (note) this.log(note, s, r.id);
+  }
+
+  isMobile(r) { return r.state === 'Search' || (r.state === 'Leader' && r.phase !== 'compute'); }
+
+  /* ---- 1 tick ---- */
+  step() {
+    const P = this.P, rs = this.robots, rng = this.rng;
+    const alive = rs.filter(r => r.alive);
+    // 1) 送信: 各ロボットは自分の公開情報だけを毎 tick ブロードキャスト
+    const msgs = alive.map(r => ({
+      r, s: {
+        id: r.id, st: r.state, tag: r.tag, ts: r.ts, ver: r.ver, qid: r.qid, qh: r.qh,
+        eid: r.eid, ever: r.ever, shape: r.shape, mob: this.isMobile(r), occ6: r.occ6, hop: r.hop,
+      },
+    }));
+    // 2) 受信: 通信範囲内で、確率 (1 - loss) で届く。距離計測にはノイズ
+    const c2 = P.comm * P.comm;
+    this.msgCount = 0; this.lostCount = 0;
+    for (const a of msgs) {
+      for (const b of alive) {
+        if (b === a.r) continue;
+        const dx = b.x - a.r.x, dy = b.y - a.r.y;
+        if (dx * dx + dy * dy > c2) continue;
+        if (rng() < P.loss) { this.lostCount++; continue; }
+        this.msgCount++;
+        b.inbox.push({ s: a.s, x: a.r.x + (rng() - 0.5) * 2 * P.noise, y: a.r.y + (rng() - 0.5) * 2 * P.noise });
+      }
+    }
+    // 3) 各ロボットが非同期（ランダム順）に自分の制御則を実行
+    const order = alive.slice();
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    for (const r of order) this.think(r);
+    // 4) 物理
+    this.physics(alive);
+    this.t++;
+    this.checkDone();
+  }
+
+  /* ---- 受信処理と状態機械 ---- */
+  think(r) {
+    const P = this.P, t = this.t;
+    r.sawStab = false;
+    let newShape = null;
+    for (const m of r.inbox) {
+      const s = m.s;
+      let n = r.nbr.get(s.id);
+      const prev = n ? n.st : null;
+      if (!n) { n = { id: s.id }; r.nbr.set(s.id, n); }
+      if (!s.mob && n.ax != null && !n.mob && Math.hypot(m.x - n.ax, m.y - n.ay) < 6) {
+        n.cnt = Math.min(n.cnt + 1, 30); n.ax += (m.x - n.ax) / n.cnt; n.ay += (m.y - n.ay) / n.cnt;
+      } else { n.ax = m.x; n.ay = m.y; n.cnt = 1; }
+      n.x = s.mob ? m.x : n.ax; n.y = s.mob ? m.y : n.ay; n.st = s.st; n.tag = s.tag; n.ts = s.ts; n.ver = s.ver;
+      n.qid = s.qid; n.qh = s.qh; n.eid = s.eid; n.ever = s.ever; n.mob = s.mob; n.occ6 = s.occ6; n.sid = s.shape ? s.shape.sid : null; n.shapeRef = s.shape; n.hop = s.hop; n.t = t; n.away = false;
+      if ((prev === 'Active' || prev === 'Quasi') && s.st === 'Stable') {
+        const dd = Math.hypot(n.x - r.x, n.y - r.y);
+        if (dd > 0.7 * P.d && dd < 1.3 * P.d) r.sawStab = true;
+      }
+      // 新しい形状は、定着している個体なら「接している隣」からだけ受け取る（切断で分かれた別のかたまりの形状を拾わない）
+      if (s.shape && s.shape.ver > r.ver && (!newShape || s.shape.ver > newShape.ver)) {
+        const touching = !s.mob && Math.hypot(m.x - r.x, m.y - r.y) < 1.3 * P.d;
+        if (!r.tag || !PLACED.has(r.state) || touching) newShape = s.shape;
+      }
+    }
+    r.inbox.length = 0;
+    for (const [id, n] of r.nbr) if (t - n.t > (PLACED.has(n.st) && !n.mob ? 600 : 80)) r.nbr.delete(id);
+
+    if (newShape) this.adopt(r, newShape);
+    else if (r.state === 'Search' && t - r.since > 300 && !(r.joinedAt && t - r.joinedAt < 3000)) {
+      // 補助: 自分の形状の仲間が長く聞こえず、別の形状の群れのそばにいるなら、その群れに加わる
+      let mine = false, other = null;
+      for (const n of r.nbr.values()) {
+        if (!PLACED.has(n.st) || !n.tag || n.mob || n.away) continue;
+        if (n.sid === r.shape.sid) { if (t - n.t < 200) mine = true; }
+        else if (t - n.t <= 2 && n.shapeRef) other = n.shapeRef;
+      }
+      if (!mine && other) { this.adopt(r, other); r.since = t; r.joinedAt = t; this.log(`R${r.id} が近くの別の群れ（形状 ${other.sid}）に加わる`, 'info', r.id); }
+    }
+
+    // 自分の 6 近傍のどこが埋まっているか（6 ビット）。メッセージで周りに伝える
+    r.occ6 = 0;
+    if (r.tag && PLACED.has(r.state)) {
+      for (const n of r.nbr.values()) {
+        if (t - n.t > P.W_PRESENT || !PLACED.has(n.st) || !n.tag || n.mob) continue;
+        const dx = n.tag[0] - r.tag[0], dy = n.tag[1] - r.tag[1];
+        for (let b = 0; b < 6; b++) if (NB[b][0] === dx && NB[b][1] === dy) r.occ6 |= 1 << b;
+      }
+    }
+
+    // 形状までのホップ数（補助）。Queued は「自分より外側に Queued の仲間がいない」ときだけ出発候補になる
+    if (r.state === 'Queued') {
+      let h = 99, outer = false;
+      for (const n of r.nbr.values()) {
+        if (t - n.t > P.W_SEEN || n.mob || n.away || n.sid !== r.shape.sid) continue;
+        if (n.hop != null && n.hop + 1 < h) h = n.hop + 1;
+      }
+      r.hop = h;
+      for (const n of r.nbr.values()) {
+        if (t - n.t > P.W_SEEN || n.mob || n.away || n.st !== 'Queued' || n.sid !== r.shape.sid) continue;
+        if (n.hop != null && n.hop > r.hop && n.hop < 99) { outer = true; break; }
+      }
+      r.edge = !outer || !P.noSeal;
+    } else { r.hop = (PLACED.has(r.state) && r.tag) ? 0 : 99; r.edge = false; }
+
+    // 最小 ID の伝搬 (Queued のロボットの中で最小の ID を探す: 論文 Table 1 Queued)
+    let bid = (r.state === 'Queued' && r.edge) ? r.id : null, bh = 0;
+    for (const n of r.nbr.values()) {
+      if (t - n.t > 2 || n.qid == null || n.qh + 1 > P.QMAX) continue;
+      if (bid == null || n.qid < bid || (n.qid === bid && n.qh + 1 < bh)) { bid = n.qid; bh = n.qh + 1; }
+    }
+    r.qid = bid; r.qh = bid == null ? 0 : bh;
+
+    // リーダー選出の伝搬（候補は Danger のみ）。隣接して接している個体どうしで中継するので、
+    // 切断で分かれた「かたまり」ごとに 1 台のリーダーが選ばれる
+    for (const n of r.nbr.values()) {
+      if (t - n.t > 2 || n.eid == null || n.ever !== r.ver || n.mob || n.sid !== r.shape.sid) continue;
+      if (r.tag && Math.hypot(n.x - r.x, n.y - r.y) > 1.3 * P.d) continue;
+      if (r.eid == null || r.ever !== r.ver || n.eid < r.eid) {
+        r.eid = n.eid; r.ever = r.ver; r.eChanged = t;
+      }
+    }
+
+    switch (r.state) {
+      case 'Queued': this.doQueued(r); break;
+      case 'Search': this.doSearch(r); break;
+      case 'Inactive': {
+        r.count = this.countPlaced(r);
+        if (r.sawStab) { this.setState(r, 'Active'); break; }
+        // 補助: 遷移の瞬間を聞き逃しても、同じ版の Stable の隣で長く待ち、Active の隣もいなければ Active になる
+        if (P.noSeal && t - r.since > 60) {
+          let stab = false, act = false;
+          for (const n of r.nbr.values()) {
+            if (t - n.t > P.W_SEEN || !n.tag || n.sid !== r.shape.sid) continue;
+            const dd = Math.hypot(n.x - r.x, n.y - r.y);
+            if (dd < 0.7 * P.d || dd > 1.3 * P.d) continue;
+            if (n.st === 'Stable') stab = true; else if (n.st === 'Active' || n.st === 'Quasi') act = true;
+          }
+          if ((stab || r.count >= r.nn) && !act) this.setState(r, 'Active');
+        }
+        break;
+      }
+      case 'Active': this.doActive(r); break;
+      case 'Quasi':
+        r.count = this.countPlaced(r);
+        if (--r.timer <= 0) this.setState(r, 'Active');
+        break;
+      case 'Stable': this.doStable(r); break;
+      case 'Danger': this.doDanger(r); break;
+      case 'Leader': this.doLeader(r); break;
+    }
+  }
+
+  adopt(r, sh) {
+    r.ver = sh.ver; r.gene = sh.gene; r.shape = sh;
+    r.eid = null; r.ever = -1; r.lost = false; r.frozen = false; r.dock = null;
+    if (r.id === sh.leaderId) return;
+    if (r.tag && (PLACED.has(r.state))) {
+      const k = K(r.tag[0], r.tag[1]);
+      if (sh.gene.cells.has(k)) {
+        r.ts = sh.tsMap.get(k); r.nn = sh.gene.cells.get(k).NN;
+        this.setState(r, 'Inactive');
+      } else {
+        r.tag = null; r.ts = 0; r.nn = 0;
+        this.setState(r, 'Queued');
+      }
+    }
+  }
+
+  recent(r, w) { const out = []; for (const n of r.nbr.values()) if (this.t - n.t <= w && !n.away) out.push(n); return out; }
+
+  countPlaced(r) {
+    const P = this.P; let c = 0;
+    for (const n of r.nbr.values()) {
+      if (this.t - n.t > P.W_PRESENT || !PLACED.has(n.st) || !n.tag || n.mob) continue;
+      // 同じ形状（同じ遺伝子）に属し、遺伝子上のセルにいる近傍だけを数える
+      if (n.sid !== r.shape.sid || !r.gene.cells.has(K(n.tag[0], n.tag[1]))) continue;
+      const dd = Math.hypot(n.x - r.x, n.y - r.y);
+      if (dd > 0.7 * P.d && dd < 1.3 * P.d) c++;
+    }
+    return c;
+  }
+
+  doQueued(r) {
+    if (r.qid === r.id && r.edge) {
+      if (r.qSince == null) r.qSince = this.t;
+      if (this.t - r.qSince >= this.P.RELEASE) {
+        r.qSince = null; r.exit = 25; r.dock = null; r.trail = [];
+        this.setState(r, 'Search', `R${r.id} 待機列の最小 ID → 探索開始 (Search)`);
+      }
+    } else r.qSince = null;
+  }
+
+  fitFrame(placed) {
+    const d = this.P.d; let lx = 0, ly = 0, wx = 0, wy = 0;
+    const L = placed.map(n => { const p = latLocal(n.tag[0], n.tag[1]); return [p[0] * d, p[1] * d]; });
+    for (let i = 0; i < placed.length; i++) { lx += L[i][0]; ly += L[i][1]; wx += placed[i].x; wy += placed[i].y; }
+    const m = placed.length; lx /= m; ly /= m; wx /= m; wy /= m;
+    let dot = 0, cr = 0;
+    for (let i = 0; i < m; i++) {
+      const ax = L[i][0] - lx, ay = L[i][1] - ly, bx = placed[i].x - wx, by = placed[i].y - wy;
+      dot += ax * bx + ay * by; cr += ax * by - ay * bx;
+    }
+    const phi = Math.atan2(cr, dot), c = Math.cos(phi), s = Math.sin(phi);
+    return { phi, ox: wx - (c * lx - s * ly), oy: wy - (s * lx + c * ly) };
+  }
+
+  frameWorld(fr, X, Y) {
+    const d = this.P.d, p = latLocal(X, Y), lx = p[0] * d, ly = p[1] * d;
+    const c = Math.cos(fr.phi), s = Math.sin(fr.phi);
+    return [fr.ox + c * lx - s * ly, fr.oy + s * lx + c * ly];
+  }
+
+  edgeFollow(r, list) {
+    let best = null, bd = Infinity;
+    for (const n of list) { const dd = Math.hypot(r.x - n.x, r.y - n.y); if (dd < bd) { bd = dd; best = n; } }
+    if (!best || bd < 1e-6) return null;
+    const ux = (r.x - best.x) / bd, uy = (r.y - best.y) / bd;
+    const e = (this.P.d - bd) / this.P.d;
+    // 時計回り（集団を右手に見る）に周辺をなぞる
+    return [uy + 2.5 * e * ux, -ux + 2.5 * e * uy];
+  }
+
+  steer(r, hx, hy, speed, sharp) {
+    const want = Math.atan2(hy, hx);
+    const diff = angNorm(want - r.th);
+    r.th = angNorm(r.th + clamp(diff, -this.P.turn * (sharp ? 1.6 : 1), this.P.turn * (sharp ? 1.6 : 1)));
+    const f = Math.max(0, Math.cos(diff));
+    const sp = sharp ? (Math.abs(diff) < 0.5 ? speed : 0) : speed * (0.3 + 0.7 * f);
+    r.mx = Math.cos(r.th) * sp; r.my = Math.sin(r.th) * sp;
+  }
+
+  shouldYield(r) {
+    // 前方に移動中のロボットがいれば止まって待つ。待ちすぎたらしばらく譲らずに進む（デッドロック回避）
+    if (r.noYield > 0) { r.noYield--; return false; }
+    const hx = Math.cos(r.th), hy = Math.sin(r.th);
+    for (const n of r.nbr.values()) {
+      if (this.t - n.t > 2 || !n.mob) continue;
+      const dx = n.x - r.x, dy = n.y - r.y, dd = Math.hypot(dx, dy);
+      if (dd < 2.7 * this.P.R && (dx * hx + dy * hy) > 0.4 * dd) {
+        if (++r.wait > 30) { r.wait = 0; r.noYield = 25; return false; }
+        return true;
+      }
+    }
+    r.wait = 0; return false;
+  }
+
+  // (x0,y0) の 6 近傍のうち、誰もいない格子点の位置（最も開けている方向）を返す
+  openNeighbor(r, statics, x0, y0) {
+    const P = this.P;
+    const tagged = statics.filter(n => n.tag && Math.hypot(n.x - x0, n.y - y0) < 2.2 * P.d);
+    if (tagged.length < 2) return null;
+    const fr = this.fitFrame(tagged);
+    const c = Math.cos(fr.phi), s = Math.sin(fr.phi);
+    let best = null, bs = Infinity;
+    for (let a = 0; a < 6; a++) {
+      const ang = Math.PI / 3 * a;
+      const px = x0 + P.d * Math.cos(ang) * c - P.d * Math.sin(ang) * s;
+      const py = y0 + P.d * Math.cos(ang) * s + P.d * Math.sin(ang) * c;
+      let crowd = 0, hit = false;
+      for (const n of statics) {
+        const dd = Math.hypot(n.x - px, n.y - py);
+        if (dd < 0.6 * P.d) { hit = true; break; }
+        if (dd < 1.3 * P.d) crowd++;
+      }
+      if (hit) continue;
+      if (crowd < bs) { bs = crowd; best = [px, py]; }
+    }
+    return best;
+  }
+
+  exitStep(r, statics) {
+    const near = statics.filter(n => Math.hypot(n.x - r.x, n.y - r.y) < 1.4 * this.P.d);
+    let nearest = Infinity; for (const n of near) nearest = Math.min(nearest, Math.hypot(n.x - r.x, n.y - r.y));
+    if (!near.length || nearest > 0.9 * this.P.d || r.exit <= 0) { r.exit = 0; r.exitTo = null; return false; }
+    let cx = 0, cy = 0; for (const n of near) { cx += n.x; cy += n.y; } cx /= near.length; cy /= near.length;
+    let hx = r.x - cx, hy = r.y - cy;
+    if (near.length >= 3) {
+      if (!r.exitTo) r.exitTo = this.openNeighbor(r, statics, r.x, r.y);
+      if (r.exitTo) { hx = r.exitTo[0] - r.x; hy = r.exitTo[1] - r.y; }
+    }
+    if (Math.hypot(hx, hy) < 1) { hx = Math.cos(r.th); hy = Math.sin(r.th); }
+    r.exit--;
+    this.steer(r, hx, hy, this.P.v * 0.8);
+    return true;
+  }
+
+  doSearch(r) {
+    const P = this.P, t = this.t;
+    const rec = this.recent(r, P.W_SEEN);
+    const statics = rec.filter(n => STATIC.has(n.st) && !n.mob);
+    const placed = rec.filter(n => PLACED.has(n.st) && n.tag && !n.mob);
+    const mem = new Set(), memList = [];
+    for (const n of r.nbr.values()) if (PLACED.has(n.st) && n.tag && !n.mob && !n.away && n.sid === r.shape.sid) { mem.add(K(n.tag[0], n.tag[1])); memList.push(n); }
+    // 近傍が教えてくれた「その隣の埋まり具合」も合わせて、少し広い範囲の占有地図を作る
+    for (const n of memList) if (n.occ6) for (let b = 0; b < 6; b++) if (n.occ6 & (1 << b)) mem.add(K(n.tag[0] + NB[b][0], n.tag[1] + NB[b][1]));
+    if (r.dock && this.followDock(r, rec, memList, mem)) return;
+    if (r.exit > 0 && this.exitStep(r, statics)) return;
+
+    // 局所化 (論文 3.1.3): 近傍の座標から自分が入れる格子点を判断
+    const actives = placed.filter(n => n.st === 'Active');
+    if (actives.length && placed.length >= 2) {
+      const plan = this.planDock(r, rec, placed, actives, mem, statics, memList);
+      if (plan) { r.dock = plan; this.followDock(r, rec, memList, mem); return; }
+    }
+    // 周辺をなぞって移動（エッジフォロー）
+    const h = this.edgeFollow(r, statics);
+    if (!h) {
+      // 誰も聞こえない: 最後に聞こえた静止ロボットの方向へ戻る
+      let best = null, bd = Infinity;
+      for (const n of r.nbr.values()) {
+        if (!STATIC.has(n.st) || n.mob || n.away) continue;
+        const dd = Math.hypot(n.x - r.x, n.y - r.y) + (n.sid === r.shape.sid ? 0 : 1e4);
+        if (dd < bd) { bd = dd; best = n; }
+      }
+      if (best) this.steer(r, best.x - r.x, best.y - r.y, P.v);
+      else { r.th += 0.04; r.mx = Math.cos(r.th) * P.v * 0.4; r.my = Math.sin(r.th) * P.v * 0.4; }
+      return;
+    }
+    if (this.shouldYield(r)) { r.mx = 0; r.my = 0; return; }
+    this.steer(r, h[0], h[1], P.v);
+  }
+
+  toLattice(fr, x, y) {
+    const d = this.P.d, c = Math.cos(-fr.phi), s = Math.sin(-fr.phi), wx = x - fr.ox, wy = y - fr.oy;
+    const lx = (c * wx - s * wy) / d, ly = (s * wx + c * wy) / d;
+    const Yf = ly / SQ, Xf = lx + 0.5 * Yf;
+    let best = null, bd = Infinity;
+    for (const X of [Math.floor(Xf), Math.ceil(Xf)]) for (const Y of [Math.floor(Yf), Math.ceil(Yf)]) {
+      const p = latLocal(X, Y), dd = (p[0] - lx) ** 2 + (p[1] - ly) ** 2;
+      if (dd < bd) { bd = dd; best = [X, Y]; }
+    }
+    return best;
+  }
+
+  sitePos(placed, X, Y) {
+    const local = placed.filter(n => hexDist(n.tag[0] - X, n.tag[1] - Y) <= 2);
+    const adj = local.filter(n => hexDist(n.tag[0] - X, n.tag[1] - Y) === 1);
+    if (local.length < 2 || !adj.length) return null;
+    const lf = this.fitFrame(local);
+    let sx = 0, sy = 0;
+    for (const n of adj) {
+      const p = this.frameWorld({ ox: 0, oy: 0, phi: lf.phi }, X - n.tag[0], Y - n.tag[1]);
+      sx += n.x + p[0]; sy += n.y + p[1];
+    }
+    return [sx / adj.length, sy / adj.length];
+  }
+
+  /* 近くの空き格子点を最大 3 歩まで辿り、入れる格子点（遺伝子上で Flag=1、Active の隣、空き）を探す */
+  planDock(r, rec, placed, actives, mem, statics, memList) {
+    const P = this.P, t = this.t;
+    const near = placed.filter(n => Math.hypot(n.x - r.x, n.y - r.y) < 2.2 * P.d);
+    if (near.length < 2) return null;
+    const fr = this.fitFrame(near);
+    const occ = mem;   // 静止したロボットの位置は記憶しておける
+    const obst = new Set(mem);
+    const mobCells = new Set();
+    for (const n of rec) if (n.mob && t - n.t <= 2) { const q = this.toLattice(fr, n.x, n.y); obst.add(K(q[0], q[1])); mobCells.add(K(q[0], q[1])); }
+    let tsMin = Infinity; for (const a of actives) tsMin = Math.min(tsMin, a.ts);
+    // 最後に聞いた時点で Active だったロボット（記憶）も候補の手がかりにする
+    const activeAt = new Map();
+    for (const a of memList) if (a.st === 'Active' && t - a.t <= 300) activeAt.set(K(a.tag[0], a.tag[1]), a);
+    const me = this.toLattice(fr, r.x, r.y);
+    const prev = new Map(), depth = new Map(), queue = [];
+    for (const [dx, dy] of [[0, 0], ...NB]) {
+      const X = me[0] + dx, Y = me[1] + dy, k = K(X, Y);
+      if (obst.has(k) || prev.has(k)) continue;
+      const w = this.frameWorld(fr, X, Y);
+      if (Math.hypot(w[0] - r.x, w[1] - r.y) > 0.8 * P.d || !this.clearPath(r.x, r.y, w[0], w[1], statics)) continue;
+      prev.set(k, null); depth.set(k, 0); queue.push([X, Y]);
+    }
+    let best = null, bs = Infinity;
+    while (queue.length) {
+      const [X, Y] = queue.shift(), k = K(X, Y), dp = depth.get(k);
+      if (r.gene.cells.has(k) && !occ.has(k)) {
+        let via = null, around = 0;
+        for (const q of nbKeys(X, Y)) {
+          if (mem.has(q)) around++;
+          const a = activeAt.get(q); if (a && (!via || a.ts < via.ts)) via = a;
+        }
+        // TS が最小の Active の隣を優先（論文）。周囲 4 方向以上が埋まったくぼみは例外（補助ルール）
+        const okTs = via && (via.ts === tsMin || (P.noSeal && around >= 4));
+        const bl = r.black.get(k);
+        if (okTs && !(bl && bl > t) && !(P.noSeal && this.wouldSeal(r.gene, X, Y, mem, mobCells))) {
+          const sp = this.sitePos(memList, X, Y);
+          if (sp) {
+            // 空きだと確認できている候補を優先（近くで聞こえる距離にある／隣のロボットが空きと伝えている）
+            const known = Math.hypot(sp[0] - r.x, sp[1] - r.y) < 0.8 * P.comm || this.knownEmpty(memList, X, Y);
+            const score = dp * 10 - 12 * around + Math.hypot(sp[0] - r.x, sp[1] - r.y) * 0.05 + (known ? 0 : 25);
+            if (score < bs) { bs = score; best = { k, X, Y, sp, via }; }
+          }
+        }
+      }
+      if (dp >= 5) continue;
+      for (const [dx, dy] of NB) {
+        const nX = X + dx, nY = Y + dy, nk = K(nX, nY);
+        if (prev.has(nk) || obst.has(nk)) continue;
+        prev.set(nk, k); depth.set(nk, dp + 1); queue.push([nX, nY]);
+      }
+    }
+    if (!best) return null;
+    const path = []; let cur = prev.get(best.k);
+    while (cur) { const [X, Y] = unK(cur); path.unshift(this.frameWorld(fr, X, Y)); cur = prev.get(cur); }
+    path.push(best.sp);
+    return { key: best.k, X: best.X, Y: best.Y, x: best.sp[0], y: best.sp[1], ts: best.via.ts, t0: t, via: best.via.id, path, i: 0 };
+  }
+
+  knownEmpty(memList, X, Y) {
+    const t = this.t;
+    for (const n of memList) {
+      if (t - n.t > 30) continue;
+      const dx = X - n.tag[0], dy = Y - n.tag[1];
+      for (let b = 0; b < 6; b++) if (NB[b][0] === dx && NB[b][1] === dy && !(n.occ6 & (1 << b))) return true;
+    }
+    return false;
+  }
+
+  followDock(r, rec, placed, mem) {
+    const P = this.P, t = this.t, dk = r.dock;
+    let blocked = false;
+    for (const n of rec) {
+      if (t - n.t > 2) continue;
+      const dd = Math.hypot(n.x - dk.x, n.y - dk.y);
+      if (dd < 0.5 * P.d && (PLACED.has(n.st) || (n.mob && dd < Math.hypot(r.x - dk.x, r.y - dk.y) - 2))) blocked = true;
+    }
+    if (!blocked && P.noSeal) {
+      const near = placed.filter(n => t - n.t <= 30 && Math.hypot(n.x - r.x, n.y - r.y) < 2.2 * P.d);
+      const mobCells = new Set();
+      if (near.length >= 2) {
+        const fr = this.fitFrame(near);
+        for (const n of rec) if (n.mob && t - n.t <= 2) { const q = this.toLattice(fr, n.x, n.y); mobCells.add(K(q[0], q[1])); }
+      }
+      if (this.wouldSeal(r.gene, dk.X, dk.Y, mem, mobCells)) blocked = true;
+    }
+    if (blocked || !r.gene.cells.has(dk.key) || t - dk.t0 > P.DOCK_TIMEOUT) {
+      r.black.set(dk.key, t + (blocked ? 150 : 300)); r.dock = null; return false;
+    }
+    // 近づくほど多くの近傍が聞こえるので、目標点を記憶中の近傍から推定し直す
+    const sp = this.sitePos(placed, dk.X, dk.Y);
+    if (sp) { dk.x = sp[0]; dk.y = sp[1]; dk.path[dk.path.length - 1] = sp; }
+    let [wx, wy] = dk.path[dk.i];
+    let dd = Math.hypot(wx - r.x, wy - r.y);
+    const last = dk.i === dk.path.length - 1;
+    if (!last && dd < 2.5) { dk.i++; [wx, wy] = dk.path[dk.i]; dd = Math.hypot(wx - r.x, wy - r.y); }
+    if (dk.i === dk.path.length - 1 && dd < 1.0) { this.place(r); return true; }
+    this.steer(r, wx - r.x, wy - r.y, Math.min(P.vDock, Math.max(dd, 0.3)), true);
+    return true;
+  }
+
+  // 直進して目標点に行くとき、静止しているロボットにぶつからないか
+  clearPath(x0, y0, x1, y1, statics) {
+    const lx = x1 - x0, ly = y1 - y0, L2 = lx * lx + ly * ly || 1, lim = 2 * this.P.R - 1.5;
+    for (const n of statics) {
+      const tt = clamp(((n.x - x0) * lx + (n.y - y0) * ly) / L2, 0, 1);
+      if (Math.hypot(n.x - (x0 + lx * tt), n.y - (y0 + ly * tt)) < lim) return false;
+    }
+    return true;
+  }
+
+  // (X,Y) に入ると、隣の空きセルが 6 方向すべて塞がれて誰も入れない「穴」になるか
+  wouldSeal(gene, X, Y, occ, mobCells) {
+    // (X,Y) を埋めると、近くの空きセル（遺伝子上のセルを含む領域）が外につながらなくなるか（半径 4 の局所探索）
+    const self = K(X, Y), RAD = 4;
+    const blocked = (k) => k === self || occ.has(k);
+    for (const [dx, dy] of NB) {
+      const sk = K(X + dx, Y + dy);
+      if (blocked(sk)) continue;
+      const seen = new Set([sk]), st = [[X + dx, Y + dy]];
+      let escape = false, hasGene = false;
+      while (st.length && !escape) {
+        const [cx, cy] = st.pop();
+        if (gene.cells.has(K(cx, cy)) || (mobCells && mobCells.has(K(cx, cy)))) hasGene = true;   // 移動中の仲間を閉じ込めない
+        if (hexDist(cx - X, cy - Y) >= RAD) { escape = true; break; }
+        for (const [ex, ey] of NB) {
+          const k = K(cx + ex, cy + ey);
+          if (seen.has(k) || blocked(k)) continue;
+          seen.add(k); st.push([cx + ex, cy + ey]);
+        }
+      }
+      if (!escape && hasGene) return true;
+    }
+    return false;
+  }
+
+  place(r) {
+    const dk = r.dock;
+    r.tag = [dk.X, dk.Y]; r.ts = dk.ts + 1; r.nn = r.gene.cells.get(dk.key).NN; r.dock = null;
+    r.mx = 0; r.my = 0;
+    let best = null, bd = Infinity;
+    for (const o of this.robots) {
+      if (!o.alive || o === r || o.frameId == null || !o.tag) continue;
+      const dd = Math.hypot(o.x - r.x, o.y - r.y); if (dd < bd) { bd = dd; best = o; }
+    }
+    r.frameId = best ? best.frameId : 0;
+    r.count = this.countPlaced(r);
+    if (r.count >= r.nn) this.setState(r, 'Stable', `R${r.id} が (${dk.X},${dk.Y}) に定着 → 近傍数 ${r.count}/${r.nn} で即 Stable`);
+    else this.setState(r, 'Inactive', `R${r.id} が (${dk.X},${dk.Y}) に定着 (TS=${r.ts}, NN=${r.nn})`);
+  }
+
+  doActive(r) {
+    const P = this.P;
+    r.count = this.countPlaced(r);
+    if (r.count >= r.nn) { this.setState(r, 'Stable'); return; }
+    for (const n of r.nbr.values()) {
+      if (this.t - n.t > P.W_SEEN || n.st !== 'Active' || !n.tag || n.ts >= r.ts) continue;
+      const dd = Math.hypot(n.x - r.x, n.y - r.y);
+      if (dd > 0.7 * P.d && dd < 1.3 * P.d) { this.setState(r, 'Quasi'); r.timer = P.QUASI_T; return; }
+    }
+  }
+
+  doStable(r) {
+    if (r.halted) return;
+    if (r.eid != null && r.ever === r.ver) r.frozen = true;
+    r.count = this.countPlaced(r);
+    if (!r.frozen && r.count < r.nn) {
+      if (r.eid == null || r.ever !== r.ver || r.id < r.eid) { r.eid = r.id; r.ever = r.ver; r.eChanged = this.t; }
+      this.setState(r, 'Danger', `R${r.id} 近傍が ${r.nn}→${r.count} に減少: 損傷を検出 (Danger)`);
+    }
+  }
+
+  doDanger(r) {
+    r.count = this.countPlaced(r);
+    if (r.eid !== r.id) { r.lost = true; return; }
+    if (this.t - r.eChanged >= this.P.T_ELECT) {
+      this.setState(r, 'Leader', `R${r.id} がリーダーに選出（${this.P.T_ELECT} tick の間、より小さい ID が届かなかった）`);
+      r.phase = 'exit'; r.home = { x: r.x, y: r.y };
+      r.tour = { order: [K(r.tag[0], r.tag[1])], seen: new Set([K(r.tag[0], r.tag[1])]), L: 0, start: null, path: [] };
+      r.exit = 30; r.trail = [];
+    }
+  }
+
+  doLeader(r) {
+    const P = this.P, rec = this.recent(r, P.W_SEEN);
+    const statics = rec.filter(n => STATIC.has(n.st) && !n.mob);
+    const tour = r.tour;
+    if (r.phase === 'exit') {
+      // 自分の空けた場所（くぼみ）から外へ十分に出てから外周をなぞり始める
+      const away = Math.hypot(r.x - r.home.x, r.y - r.home.y);
+      if (away < 0.8 * P.d && r.exit > 0) {
+        if (!r.exitTo) r.exitTo = this.openNeighbor(r, statics, r.home.x, r.home.y);
+        r.exit--;
+        if (r.exitTo) { this.steer(r, r.exitTo[0] - r.x, r.exitTo[1] - r.y, P.v * 0.8, true); return; }
+      }
+      r.exitTo = null;
+      r.phase = 'tour'; tour.start = { x: r.x, y: r.y }; tour.th0 = null;
+      return;
+    }
+    if (r.phase === 'tour') {
+      for (const n of statics) {
+        if (!n.tag || !PLACED.has(n.st)) continue;
+        const k = K(n.tag[0], n.tag[1]);
+        if (!tour.seen.has(k) && Math.hypot(n.x - r.x, n.y - r.y) < 1.35 * P.d) { tour.seen.add(k); tour.order.push(k); }
+      }
+      const h = this.edgeFollow(r, statics);
+      if (!h) { r.phase = 'return'; return; }
+      this.steer(r, h[0], h[1], P.v);
+      tour.L += Math.hypot(r.mx, r.my);
+      if (tour.th0 == null && tour.L > 0.5 * P.d) tour.th0 = r.th;
+      // 出発点のそばを、出発時と同じ向きで通ったら一周（細い腕の行き帰りで誤判定しない）
+      const back = tour.th0 != null && Math.cos(r.th - tour.th0) > 0.3;
+      if ((tour.L > 5 * P.d && back && Math.hypot(r.x - tour.start.x, r.y - tour.start.y) < 0.7 * P.d) || tour.L > 80 * P.d) {
+        r.phase = 'return';
+        this.log(`リーダー R${r.id} が外周を一周（${(tour.L / 10).toFixed(0)} cm）し、周縁の ${tour.order.length} 台のタグを取得`, 'Leader', r.id);
+      }
+      return;
+    }
+    if (r.phase === 'return') {
+      const dx = r.home.x - r.x, dy = r.home.y - r.y, dd = Math.hypot(dx, dy);
+      if (dd < 1.0) { r.mx = r.my = 0; r.phase = 'compute'; this.census(r); return; }
+      this.steer(r, dx, dy, Math.min(P.vDock, dd), true);
+    }
+  }
+
+  /* 論文 3.1.2: 人口調査 → 縮小形状の生成 → 共有とシード化 */
+  census(r) {
+    const tour = r.tour, gene = r.gene;
+    const poly = tour.order.map(k => { const [X, Y] = unK(k); return latLocal(X, Y); });
+    // 外周で見た個体（タグ）は閉じた輪になる。輪の外側から塗りつぶし、届かなかった遺伝子上のセルを「内側」とする
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const all = [...gene.cells.keys(), ...tour.seen];
+    for (const k of all) { const [X, Y] = unK(k); x0 = Math.min(x0, X); y0 = Math.min(y0, Y); x1 = Math.max(x1, X); y1 = Math.max(y1, Y); }
+    x0 -= 2; y0 -= 2; x1 += 2; y1 += 2;
+    const outside = new Set(), st = [];
+    for (let X = x0; X <= x1; X++) for (let Y = y0; Y <= y1; Y++) {
+      if (X === x0 || X === x1 || Y === y0 || Y === y1) { const k = K(X, Y); if (!tour.seen.has(k)) { outside.add(k); st.push([X, Y]); } }
+    }
+    while (st.length) {
+      const [cx, cy] = st.pop();
+      for (const [ex, ey] of NB) {
+        const X = cx + ex, Y = cy + ey, k = K(X, Y);
+        if (X < x0 || X > x1 || Y < y0 || Y > y1 || outside.has(k) || tour.seen.has(k)) continue;
+        outside.add(k); st.push([X, Y]);
+      }
+    }
+    const F = new Set();
+    for (const k of gene.cells.keys()) if (tour.seen.has(k) || !outside.has(k)) F.add(k);
+    const n = F.size;
+    r.census = { n, F, N: gene.size, poly };
+    const Lc = r.tag;
+    const publish = (cells, seeds, rot, keep) => {
+      if (!cells.some(c => c[0] === Lc[0] && c[1] === Lc[1])) cells = cells.concat([Lc.slice()]);
+      const g2 = makeGene(cells);
+      const tsMap = new Map(); const q = [K(Lc[0], Lc[1])]; tsMap.set(q[0], 1);
+      while (q.length) {
+        const cur = q.shift(); const [X, Y] = unK(cur);
+        for (const nk of nbKeys(X, Y)) if (g2.cells.has(nk) && !tsMap.has(nk)) { tsMap.set(nk, tsMap.get(cur) + 1); q.push(nk); }
+      }
+      for (const k of g2.cells.keys()) if (!tsMap.has(k)) tsMap.set(k, 99);
+      const sh = { ver: r.ver + 1, sid: (r.ver + 1) + '-' + r.id, gene: g2, leaderId: r.id, leaderTag: Lc.slice(), seeds, tsMap, rot, keep };
+      this.adopt(r, sh);
+      r.tour = null; r.phase = null; r.ts = 1; r.nn = g2.cells.get(K(Lc[0], Lc[1])).NN;
+      r.leaderOf = sh.ver;
+      this.setState(r, 'Active');
+      return sh;
+    };
+    const fail = (why) => {
+      // 縮小版を作れないときは、残った形をそのまま新しい形として受け入れる（シミュレータ側の補助）
+      this.log(`リーダー R${r.id}: ${why}。残った ${n} 台の形をそのまま新しい形として共有`, 'warn', r.id);
+      publish([...F].map(unK), [], 0, n);
+    };
+    if (n < 3) return fail(`残り ${n} 台では三角格子を作れない`);
+    const S = scaleDown([...gene.cells.values()].map(c => [c.X, c.Y]), n);
+    let best = null;
+    for (let k = 0; k < 6; k++) {
+      const RS = S.map(([X, Y]) => rot60(X, Y, k));
+      for (const [sx, sy] of RS) {
+        const tx = Lc[0] - sx, ty = Lc[1] - sy;
+        const T = RS.map(([X, Y]) => [X + tx, Y + ty]);
+        const Tset = new Set(T.map(c => K(c[0], c[1])));
+        let score = 0; for (const kk of Tset) if (F.has(kk)) score++;
+        const ks = nbKeys(Lc[0], Lc[1]);
+        let seeds = null;
+        for (let i = 0; i < 6; i++) {
+          const a = ks[i], b = ks[(i + 1) % 6];
+          if (Tset.has(a) && Tset.has(b) && F.has(a) && F.has(b)) { seeds = [a, b]; break; }
+        }
+        if (!seeds) continue;
+        // 新しい形に入らない個体が、新しい形に囲まれて出られなくなる配置は避ける
+        if (this.trapsSomeone(F, Tset)) continue;
+        const pen = (k === 0 ? 0 : 0.5) + 0.001 * (Math.abs(tx) + Math.abs(ty));
+        const val = score - pen;
+        if (!best || val > best.val) best = { val, score, T, Tset, seeds, k };
+      }
+    }
+    if (!best) return fail('シードにできる近傍が見つからない');
+    this.log(`リーダー R${r.id}: 人口調査 n=${n}（元 N=${gene.size}、分離 K=${gene.size - n}）。境界を削って ${n} セルの縮小形状を生成` +
+      `（回転 ${best.k * 60}°、その場で使える個体 ${best.score} 台）し、群れに共有`, 'Leader', r.id);
+    publish(best.T, best.seeds, best.k, best.score);
+  }
+
+  trapsSomeone(F, Tset) {
+    for (const k of F) {
+      if (Tset.has(k)) continue;
+      const [X0, Y0] = unK(k);
+      const seen = new Set([k]), st = [[X0, Y0]];
+      let escape = false;
+      while (st.length && !escape) {
+        const [cx, cy] = st.pop();
+        for (const [ex, ey] of NB) {
+          const nk = K(cx + ex, cy + ey);
+          if (seen.has(nk) || Tset.has(nk)) continue;
+          if (!F.has(nk)) { escape = true; break; }
+          seen.add(nk); st.push([cx + ex, cy + ey]);
+        }
+      }
+      if (!escape) return true;
+    }
+    return false;
+  }
+
+  physics(alive) {
+    const P = this.P;
+    for (const r of alive) {
+      if (r.slide) {
+        r.x += r.slide.dx; r.y += r.slide.dy;
+        if (--r.slide.n <= 0) r.slide = null;
+      }
+      if (this.isMobile(r)) {
+        r.x += r.mx; r.y += r.my;
+        const last = r.trail[r.trail.length - 1];
+        if (!last || Math.hypot(last[0] - r.x, last[1] - r.y) > 3) { r.trail.push([r.x, r.y]); if (r.trail.length > 700) r.trail.shift(); }
+      }
+      r.mx = 0; r.my = 0;
+    }
+    const D = 2 * P.R;
+    for (let it = 0; it < 2; it++) {
+      for (let i = 0; i < alive.length; i++) {
+        const a = alive[i];
+        for (let j = i + 1; j < alive.length; j++) {
+          const b = alive[j];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          if (Math.abs(dx) > D || Math.abs(dy) > D) continue;
+          const dd = Math.hypot(dx, dy);
+          if (dd >= D || dd < 1e-6) continue;
+          const wa = (this.isMobile(a) || a.state === 'Queued') && !a.slide ? 1 : 0;
+          const wb = (this.isMobile(b) || b.state === 'Queued') && !b.slide ? 1 : 0;
+          if (wa + wb === 0) continue;
+          const ov = (D - dd) / (wa + wb), ux = dx / dd, uy = dy / dd;
+          a.x -= ux * ov * wa; a.y -= uy * ov * wa;
+          b.x += ux * ov * wb; b.y += uy * ov * wb;
+        }
+      }
+    }
+  }
+
+  checkDone() {
+    if (this.t % 10) return;
+    for (const g of this.shapes()) {
+      if (this.done[g.sid] || g.size < 1) continue;
+      if (g.placed === g.size && g.stable >= g.size) {
+        this.done[g.sid] = this.t;
+        this.log(g.ver === 0 ? `形状の形成が完了（${g.size} 台すべて Stable）` : `再生が完了（${g.size} 台の縮小形状がすべて Stable）`, 'done');
+      }
+    }
+  }
+
+  /* 描画・統計用: 座標系 (frame) と形状の版ごとに集計 (シミュレータ側の視点) */
+  groups() {
+    const m = new Map();
+    for (const r of this.robots) {
+      if (!r.alive || r.frameId == null || !r.tag) continue;
+      const k = r.frameId;
+      let g = m.get(k);
+      if (!g) { g = { frame: k, ver: -1, gene: null, robots: [] }; m.set(k, g); }
+      g.robots.push(r);
+      if (r.ver > g.ver) { g.ver = r.ver; g.gene = r.gene; }
+    }
+    const out = [];
+    for (const g of m.values()) {
+      const occ = new Set(); let stable = 0;
+      for (const r of g.robots) if (r.ver === g.ver && g.gene.cells.has(K(r.tag[0], r.tag[1]))) {
+        occ.add(K(r.tag[0], r.tag[1])); if (r.state === 'Stable') stable++;
+      }
+      out.push({ frame: g.frame, ver: g.ver, gene: g.gene, size: g.gene.size, placed: occ.size, occ, stable, fr: this.frames[g.frame] });
+    }
+    return out;
+  }
+
+  /* 形状 (sid) ごとの集計: 描画（目標格子）と進行状況の表示に使う */
+  shapes() {
+    const m = new Map();
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      const sid = r.shape.sid;
+      let g = m.get(sid);
+      if (!g) { g = { sid, ver: r.ver, gene: r.gene, size: r.gene.size, members: 0, placed: 0, stable: 0, occ: new Set(), fcount: new Map(), leaderId: r.shape.leaderId }; m.set(sid, g); }
+      g.members++;
+      if (r.tag && PLACED.has(r.state) && r.gene.cells.has(K(r.tag[0], r.tag[1]))) {
+        const k = K(r.tag[0], r.tag[1]);
+        if (!g.occ.has(k)) { g.occ.add(k); g.placed++; }
+        if (r.state === 'Stable') g.stable++;
+      }
+      if (r.tag && r.frameId != null) g.fcount.set(r.frameId, (g.fcount.get(r.frameId) || 0) + 1);
+    }
+    const out = [];
+    for (const g of m.values()) {
+      let fid = null, best = -1; for (const [f, c] of g.fcount) if (c > best) { best = c; fid = f; }
+      g.fr = fid == null ? null : this.frames[fid];
+      out.push(g);
+    }
+    out.sort((a, b) => b.members - a.members);
+    return out;
+  }
+
+  counts() {
+    const c = {}; for (const s of STATES) c[s] = 0;
+    for (const r of this.robots) if (r.alive) c[r.state]++;
+    return c;
+  }
+
+  /* 損傷: 線分で群れを切断し、片側を通信範囲外まで引き離す */
+  cut(ax, ay, bx, by) {
+    const P = this.P;
+    const lx = bx - ax, ly = by - ay, L = Math.hypot(lx, ly);
+    if (L < 5) return 0;
+    const nx = -ly / L, ny = lx / L;
+    let removed = 0;
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      const tt = clamp(((r.x - ax) * lx + (r.y - ay) * ly) / (L * L), 0, 1);
+      const px = ax + lx * tt, py = ay + ly * tt;
+      if (Math.hypot(r.x - px, r.y - py) < (P.cutBand || 0)) { r.alive = false; removed++; this.removed.push({ x: r.x, y: r.y, t: this.t }); }
+    }
+    // 引き離す距離: 再生した形が互いに届かないよう、群れの大きさに応じて決める
+    let ext = 0;
+    for (const r of this.robots) if (r.alive) { const q = Math.abs((r.x - ax) * nx + (r.y - ay) * ny); if (q > ext) ext = q; }
+    const gap = Math.max(P.comm * 3.6, P.comm * 2 + ext * 1.2);
+    const fmap = new Map();
+    let moved = 0;
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      if ((r.x - ax) * nx + (r.y - ay) * ny > 0) {
+        // 瞬時に引き離す（描画側でアニメーションする）。引き離している最中に通信が混ざらないように
+        r.x += nx * gap; r.y += ny * gap;
+        r.anim = { dx: nx * gap, dy: ny * gap, t0: this.t };
+        if (r.trail.length) r.trail = r.trail.map(p => [p[0] + nx * gap, p[1] + ny * gap]);
+
+        moved++;
+        if (r.frameId != null) {
+          if (!fmap.has(r.frameId)) {
+            const f = this.frames[r.frameId];
+            const nf = { id: this.frames.length, ox: f.ox + nx * gap, oy: f.oy + ny * gap, phi: f.phi };
+            this.frames.push(nf); fmap.set(r.frameId, nf.id);
+          }
+          r.frameId = fmap.get(r.frameId);
+        }
+        if (r.home) { r.home.x += nx * gap; r.home.y += ny * gap; }
+        if (r.dock) { r.dock.x += nx * gap; r.dock.y += ny * gap; r.dock.path = r.dock.path.map(p => [p[0] + nx * gap, p[1] + ny * gap]); }
+        if (r.tour && r.tour.start) { r.tour.start.x += nx * gap; r.tour.start.y += ny * gap; }
+      }
+    }
+    // 記憶している近傍の位置: 一緒に動いた相手はずらし、反対側に行った相手は「もう居ない場所」として扱う
+    // （メッセージが途絶えて W_PRESENT tick 経つまでは近傍数には数えたまま）
+    for (const r of this.robots) {
+      if (!r.alive || !r.anim || r.anim.t0 !== this.t) {
+        if (r.alive) for (const n of r.nbr.values()) { const o = this.byId.get(n.id); if (o && o.anim && o.anim.t0 === this.t) n.away = true; }
+        continue;
+      }
+      for (const n of r.nbr.values()) {
+        const o = this.byId.get(n.id);
+        if (o && o.anim && o.anim.t0 === this.t) { if (n.ax != null) { n.ax += nx * gap; n.ay += ny * gap; } n.x += nx * gap; n.y += ny * gap; }
+        else n.away = true;
+      }
+    }
+    this.cutMarks.push({ ax, ay, bx, by, t: this.t });
+    this.log(`群れを切断: ${removed} 台が失われ、${moved} 台が反対側へ引き離された`, 'cut');
+    return removed;
+  }
+
+  bbox(onlyPlaced) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      if (onlyPlaced && !(PLACED.has(r.state) || r.state === 'Leader')) continue;
+      x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x); y1 = Math.max(y1, r.y);
+    }
+    return { x0, y0, x1, y1 };
+  }
+}
+
+const api = { Sim, PRESETS, STATES, PLACED, DEF, geneFromBitmap, makeGene, scaleDown, latLocal, K, unK, NB };
+if (typeof module !== 'undefined' && module.exports) module.exports = api;
+else global.ETSwarm = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+(() => {
+'use strict';
+const E = window.ETSwarm;
+const { Sim, PRESETS, STATES, PLACED, K, unK, latLocal } = E;
+const $ = (id) => document.getElementById(id);
+const STATE_JA = { Queued: '待機', Search: '探索', Inactive: '休止', Active: '活性', Quasi: '準活性', Stable: '安定', Danger: '危険', Leader: 'リーダー' };
+const STATE_VAR = { Queued: '--st-queued', Search: '--st-search', Inactive: '--st-inactive', Active: '--st-active', Quasi: '--st-quasi', Stable: '--st-stable', Danger: '--st-danger', Leader: '--st-leader' };
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = (v) => cs.getPropertyValue(v).trim();
+  C = { arena: g('--arena'), grid: g('--grid'), ink: g('--ink'), muted: g('--muted'), line: g('--line'), accent: g('--accent'), cut: g('--cut'), edge: g('--robot-edge'), surface: g('--surface') };
+  for (const s of STATES) C[s] = g(STATE_VAR[s]);
+}
+readColors();
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); drawDFA(true); });
+new MutationObserver(() => { readColors(); drawDFA(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- 状態 ---------- */
+let shapeKey = 'T';
+let customRows = PRESETS.T.rows.slice();
+let sim = null;
+let running = !reduceMotion;
+let speed = 6;
+let selected = null;
+let cutMode = false, cutDrag = null;
+const opts = { ghost: true, links: true, trails: true, ids: false };
+const cam = { x: 0, y: 0, s: 1, init: false };
+
+function rowsFor(key) { return key === 'custom' ? customRows : PRESETS[key].rows; }
+function newSim() {
+  const params = { loss: +$('rngLoss').value, noSeal: $('optAux').checked };
+  sim = new Sim(rowsFor(shapeKey), { seed: 7, params });
+  selected = null; cam.init = false; lastLogLen = -1;
+  renderGene(); renderInspect(); updatePanels(true);
+}
+
+/* ---------- 凡例 ---------- */
+$('legend').innerHTML = STATES.map(s => `<span><i class="dot" style="background:var(${STATE_VAR[s]})"></i>${s}（${STATE_JA[s]}）</span>`).join('');
+
+/* ---------- キャンバス ---------- */
+const cv = $('cv'), ctx = cv.getContext('2d'), arena = $('arena');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = arena.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+}
+new ResizeObserver(resize).observe(arena);
+resize();
+
+const toS = (x, y) => [W / 2 + (x - cam.x) * cam.s, H / 2 - (y - cam.y) * cam.s];
+const toW = (sx, sy) => [cam.x + (sx - W / 2) / cam.s, cam.y - (sy - H / 2) / cam.s];
+
+function dispPos(r, now) {
+  if (r.anim) {
+    if (r.anim.real == null) r.anim.real = now;
+    const k = Math.min(1, (now - r.anim.real) / 700);
+    if (k >= 1) { r.anim = null; return [r.x, r.y]; }
+    const e = 1 - Math.pow(1 - k, 3);
+    return [r.x - r.anim.dx * (1 - e), r.y - r.anim.dy * (1 - e)];
+  }
+  return [r.x, r.y];
+}
+
+function updateCamera(shapes) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y) => { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; };
+  for (const r of sim.robots) if (r.alive) add(r.x, r.y);
+  if (opts.ghost) for (const g of shapes) if (g.fr) for (const c of g.gene.cells.values()) { const p = sim.frameWorld(g.fr, c.X, c.Y); add(p[0], p[1]); }
+  if (!isFinite(x0)) return;
+  const pad = 70, bw = Math.max(x1 - x0, 200) + pad * 2, bh = Math.max(y1 - y0, 200) + pad * 2;
+  const s = Math.min((W - 20) / bw, (H - 40) / bh, 2.4);
+  const tx = (x0 + x1) / 2, ty = (y0 + y1) / 2;
+  if (!cam.init) { cam.x = tx; cam.y = ty; cam.s = s; cam.init = true; return; }
+  const k = reduceMotion ? 1 : 0.06;
+  cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.s += (s - cam.s) * k;
+}
+
+function draw(now) {
+  const shapes = sim.shapes();
+  updateCamera(shapes);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = C.arena; ctx.fillRect(0, 0, W, H);
+
+  // 10 cm の方眼
+  const step = 100 * cam.s;
+  if (step > 14) {
+    ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
+    const [wx0, wy1] = toW(0, 0), [wx1, wy0] = toW(W, H);
+    for (let x = Math.floor(wx0 / 100) * 100; x <= wx1; x += 100) { const sx = toS(x, 0)[0]; ctx.moveTo(sx, 0); ctx.lineTo(sx, H); }
+    for (let y = Math.floor(wy0 / 100) * 100; y <= wy1; y += 100) { const sy = toS(0, y)[1]; ctx.moveTo(0, sy); ctx.lineTo(W, sy); }
+    ctx.stroke();
+  }
+  const R = sim.P.R * cam.s, d = sim.P.d;
+
+  // 目標の格子点（遺伝子）
+  if (opts.ghost) {
+    for (const g of shapes) {
+      if (!g.fr) continue;
+      for (const [k, c] of g.gene.cells) {
+        if (g.occ.has(k)) continue;
+        const p = sim.frameWorld(g.fr, c.X, c.Y), [sx, sy] = toS(p[0], p[1]);
+        ctx.beginPath(); ctx.arc(sx, sy, Math.max(2, R * 0.92), 0, Math.PI * 2);
+        ctx.setLineDash([3, 3]); ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.globalAlpha = 0.55; ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  const pos = new Map();
+  for (const r of sim.robots) if (r.alive) pos.set(r.id, dispPos(r, now));
+
+  // 軌跡
+  if (opts.trails) {
+    ctx.lineWidth = 1.4; ctx.lineJoin = 'round';
+    for (const r of sim.robots) {
+      if (!r.alive || r.trail.length < 2 || !(r.state === 'Search' || r.state === 'Leader')) continue;
+      const tr = r.trail, n = tr.length, from = Math.max(0, n - 400);
+      ctx.strokeStyle = C[r.state]; ctx.globalAlpha = 0.45; ctx.beginPath();
+      const off = r.anim ? [pos.get(r.id)[0] - r.x, pos.get(r.id)[1] - r.y] : [0, 0];
+      for (let i = from; i < n; i++) { const [sx, sy] = toS(tr[i][0] + off[0], tr[i][1] + off[1]); if (i === from) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy); }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // 隣接リンク（定着した個体どうし、距離 d 付近）
+  if (opts.links) {
+    ctx.strokeStyle = C.muted; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.beginPath();
+    const placed = sim.robots.filter(r => r.alive && r.tag && PLACED.has(r.state));
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+      const a = placed[i], b = placed[j], dd = Math.hypot(a.x - b.x, a.y - b.y);
+      if (dd > 1.25 * d || a.shape.sid !== b.shape.sid) continue;
+      const [ax, ay] = toS(...pos.get(a.id)), [bx, by] = toS(...pos.get(b.id));
+      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  // 選択中: 通信範囲と、いま聞こえている近傍
+  if (selected && selected.alive) {
+    const [sx, sy] = toS(...pos.get(selected.id));
+    ctx.beginPath(); ctx.arc(sx, sy, sim.P.comm * cam.s, 0, Math.PI * 2);
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = C.accent; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.2;
+    for (const n of selected.nbr.values()) {
+      if (sim.t - n.t > 2 || n.away) continue;
+      const p = pos.get(n.id); if (!p) continue;
+      const [nx, ny] = toS(...p); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(nx, ny); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    if (selected.state === 'Search' && selected.dock) {
+      ctx.strokeStyle = C.Search; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      for (let i = selected.dock.i; i < selected.dock.path.length; i++) { const [px, py] = toS(...selected.dock.path[i]); ctx.lineTo(px, py); }
+      ctx.stroke();
+    }
+    if (selected.state === 'Leader' && selected.home) {
+      const [hx, hy] = toS(selected.home.x, selected.home.y);
+      ctx.beginPath(); ctx.arc(hx, hy, R, 0, Math.PI * 2); ctx.setLineDash([2, 3]); ctx.strokeStyle = C.Leader; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  // ロボット本体
+  const showIds = opts.ids;
+  for (const r of sim.robots) {
+    if (!r.alive) continue;
+    const [sx, sy] = toS(...pos.get(r.id));
+    ctx.beginPath(); ctx.arc(sx, sy, Math.max(R, 2.5), 0, Math.PI * 2);
+    ctx.fillStyle = C[r.state]; ctx.fill();
+    ctx.lineWidth = r === selected ? 3 : 1; ctx.strokeStyle = r === selected ? C.ink : C.edge; ctx.stroke();
+    if (R > 6 && !showIds) { // 進行方向
+      ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.85; ctx.lineWidth = Math.max(1, R * 0.12);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(r.th) * R * 0.75, sy - Math.sin(r.th) * R * 0.75); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (r.halted || r.frozen) { ctx.beginPath(); ctx.arc(sx, sy, R + 3, 0, Math.PI * 2); ctx.strokeStyle = C.Danger; ctx.lineWidth = 1; ctx.stroke(); }
+    if (showIds && R > 7) {
+      ctx.fillStyle = '#ffffff'; ctx.font = `500 ${Math.max(9, Math.min(13, R * 0.62))}px ${getComputedStyle(document.body).getPropertyValue('--font-mono') || 'monospace'}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(r.id), sx, sy + (R > 10 ? R * 0.18 : 0));
+    }
+  }
+
+  // 失われた個体と切断線
+  for (const m of sim.cutMarks) {
+    const age = sim.t - m.t; if (age > 150) continue;
+    const [ax, ay] = toS(m.ax, m.ay), [bx, by] = toS(m.bx, m.by);
+    ctx.strokeStyle = C.cut; ctx.globalAlpha = 1 - age / 150; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  if (cutDrag) {
+    ctx.strokeStyle = C.cut; ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(cutDrag.sx0, cutDrag.sy0); ctx.lineTo(cutDrag.sx1, cutDrag.sy1); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // 縮尺
+  const bar = 100 * cam.s;
+  if (bar > 20 && bar < W * 0.6) {
+    const x = W - 16 - bar, y = H - 18;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + bar, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.moveTo(x + bar, y - 4); ctx.lineTo(x + bar, y + 4); ctx.stroke();
+    ctx.fillStyle = C.ink; ctx.font = '12px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText('10 cm', x + bar / 2, y - 5);
+  }
+}
+
+/* ---------- 時間表示 ---------- */
+function fmtTime(t) {
+  const s = Math.floor(t * sim.P.TICK_SEC), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(ss).padStart(2, '0');
+}
+
+/* ---------- 右パネル ---------- */
+function updatePanels(force) {
+  const c = sim.counts();
+  $('counts').innerHTML = STATES.map(s => `<div class="count"><span class="n">${c[s]}</span><span class="l"><i class="dot" style="background:var(${STATE_VAR[s]})"></i>${s}</span></div>`).join('');
+  const shapes = sim.shapes().filter(g => g.size > 0 && (g.placed > 0 || g.ver === 0));
+  $('progress').innerHTML = shapes.slice(0, 5).map((g, i) => {
+    const pct = (v) => (100 * v / Math.max(1, g.size)).toFixed(1) + '%';
+    const name = g.ver === 0 ? '元の形' : `再生した形 ${i + 1}（リーダー R${g.leaderId}）`;
+    return `<div class="prow"><span>${name}</span><span class="num">${g.stable}/${g.size} Stable · 定着 ${g.placed}</span>` +
+      `<span class="bar"><i style="width:${pct(g.stable)};background:var(--st-stable)"></i><i style="width:${pct(Math.max(0, g.placed - g.stable))};background:var(--st-inactive)"></i></span></div>`;
+  }).join('');
+  $('hud').innerHTML = `<span>経過 <b>${fmtTime(sim.t)}</b></span><span>tick <b>${sim.t}</b></span><span>ロボット <b>${sim.robots.filter(r => r.alive).length}</b> 台</span>` +
+    `<span>届いた通信 <b>${sim.msgCount || 0}</b> / 失われた <b>${sim.lostCount || 0}</b> 通（この tick）</span>`;
+  drawDFA(force);
+  renderLog();
+  if (selected) renderInspect();
+}
+
+/* 状態遷移図 */
+const NODES = {
+  Queued: [44, 36], Search: [160, 36], Inactive: [290, 36],
+  Quasi: [318, 136], Active: [214, 136], Stable: [96, 136],
+  Danger: [96, 228], Leader: [244, 228],
+};
+const EDGES = [
+  ['Queued', 'Search'], ['Search', 'Inactive'], ['Inactive', 'Active'], ['Search', 'Stable', 'curveS'],
+  ['Active', 'Quasi'], ['Quasi', 'Active'], ['Active', 'Stable'], ['Stable', 'Danger'],
+  ['Danger', 'Leader'], ['Leader', 'Active'], ['Stable', 'Queued', 'curveQ'], ['Danger', 'Inactive', 'curveDI'], ['Stable', 'Inactive', 'curveSI'], ['Danger', 'Queued', 'curveDQ'],
+];
+let dfaBuilt = false;
+function edgePath(a, b, kind) {
+  const [x1, y1] = NODES[a], [x2, y2] = NODES[b];
+  const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, r = 27;
+  const sx = x1 + ux * r, sy = y1 + uy * r, ex = x2 - ux * (r + 4), ey = y2 - uy * (r + 4);
+  const bend = { curveS: 26, curveQ: -30, curveDI: 30, curveSI: 0, curveDQ: -46 }[kind];
+  if (a === 'Quasi' && b === 'Active') return `M${sx},${sy + 7} L${ex},${ey + 7}`;
+  if (a === 'Active' && b === 'Quasi') return `M${sx},${sy - 7} L${ex},${ey - 7}`;
+  if (bend == null) return `M${sx},${sy} L${ex},${ey}`;
+  const mx = (sx + ex) / 2 - uy * bend, my = (sy + ey) / 2 + ux * bend;
+  return `M${sx},${sy} Q${mx},${my} ${ex},${ey}`;
+}
+function drawDFA(force) {
+  const svg = $('dfa');
+  if (!dfaBuilt || force) {
+    let h = `<defs><marker id="ah" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="${C.muted}"/></marker>` +
+      `<marker id="ahh" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="${C.accent}"/></marker></defs>`;
+    for (const [a, b, kind] of EDGES) h += `<path id="e-${a}-${b}" d="${edgePath(a, b, kind)}" fill="none" stroke="${C.muted}" stroke-width="1.2" marker-end="url(#ah)" opacity="0.7"/>`;
+    for (const s of STATES) {
+      const [x, y] = NODES[s];
+      h += `<g><circle cx="${x}" cy="${y}" r="27" fill="${C[s]}" stroke="${C.edge}" stroke-width="1"/>` +
+        `<text x="${x}" y="${y - 8}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="9.5">${s}</text>` +
+        `<text x="${x}" y="${y + 8}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-family="IBM Plex Mono, monospace" font-size="16" font-weight="500" id="n-${s}">0</text></g>`;
+    }
+    svg.innerHTML = h; dfaBuilt = true;
+  }
+  const c = sim.counts();
+  for (const s of STATES) { const el = document.getElementById('n-' + s); if (el) el.textContent = c[s]; }
+  for (const [a, b] of EDGES) {
+    const el = document.getElementById(`e-${a}-${b}`); if (!el) continue;
+    const ft = sim.flash[a + '>' + b], hot = ft != null && sim.t - ft < 25;
+    el.setAttribute('stroke', hot ? C.accent : C.muted); el.setAttribute('stroke-width', hot ? 3 : 1.2);
+    el.setAttribute('opacity', hot ? 1 : 0.6); el.setAttribute('marker-end', hot ? 'url(#ahh)' : 'url(#ah)');
+  }
+}
+
+/* 出来事 */
+let lastLogLen = -1, lastLogT = -1;
+function renderLog() {
+  const ev = sim.events;
+  const lastT = ev.length ? ev[ev.length - 1].t : -1;
+  if (ev.length === lastLogLen && lastT === lastLogT) return;
+  lastLogLen = ev.length; lastLogT = lastT;
+  const show = ev.slice(-80).reverse();
+  $('log').innerHTML = show.map(e => {
+    const col = STATE_VAR[e.kind] ? `var(${STATE_VAR[e.kind]})` : (e.kind === 'cut' ? 'var(--cut)' : e.kind === 'done' ? 'var(--accent)' : 'var(--muted)');
+    return `<div><time>${fmtTime(e.t)}</time><i class="dot" style="background:${col}"></i><span>${escapeHtml(e.msg)}</span></div>`;
+  }).join('');
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* 選択中ロボットの記憶 */
+function renderInspect() {
+  const el = $('inspect');
+  const r = selected;
+  if (!r) { el.innerHTML = `<p class="empty">アリーナのロボットをクリックしてください。各ロボットが判断に使うのは、ここに出る自分の記憶と、通信範囲（点線の円）から届いたメッセージだけです。</p>`; return; }
+  if (!r.alive) { el.innerHTML = `<p class="empty">R${r.id} は失われました。</p>`; return; }
+  const tag = r.tag ? `(${r.tag[0]}, ${r.tag[1]})` : '未定（座標を知らない）';
+  const role = { Queued: '待機列で自分の番を待つ', Search: r.dock ? `格子点 (${r.dock.X},${r.dock.Y}) へ移動中` : '形の周辺をなぞって入れる格子点を探す', Inactive: '隣の Active が Stable になるのを待つ', Active: '近傍数が NN に達するまで新入りを受け入れる', Quasi: 'TS の小さい隣に順番を譲って待つ', Stable: r.frozen ? '再生の進行中なので監視を止めて待つ' : '近傍数を監視する', Danger: r.lost ? 'より小さい ID を聞いたので退いた' : 'リーダー選出に参加中', Leader: { exit: '外周に出る', tour: `外周を一周中（周縁 ${r.tour ? r.tour.seen.size : 0} 台のタグを取得）`, return: '元の場所へ戻る', compute: '人口調査中' }[r.phase] || '再生を指揮' }[r.state];
+  const heard = [...r.nbr.values()].filter(n => sim.t - n.t <= 2 && !n.away).length;
+  const rows = [...r.nbr.values()].filter(n => !n.away).sort((a, b) => (sim.t - a.t) - (sim.t - b.t)).slice(0, 30).map(n => {
+    const dd = Math.hypot(n.x - r.x, n.y - r.y);
+    return `<tr><td class="mono">R${n.id}</td><td><i class="dot" style="background:var(${STATE_VAR[n.st]})"></i> ${n.st}</td><td class="mono">${n.tag ? n.tag.join(',') : '–'}</td><td class="mono">${n.ts || '–'}</td><td class="mono">${dd.toFixed(0)}</td><td class="mono">${sim.t - n.t}</td></tr>`;
+  }).join('');
+  el.innerHTML = `<dl>
+    <dt>ID</dt><dd>R${r.id}${r.seed ? '（シード）' : ''}</dd>
+    <dt>状態</dt><dd><i class="dot" style="background:var(${STATE_VAR[r.state]})"></i> ${r.state}（${STATE_JA[r.state]}）</dd>
+    <dt>いまの行動</dt><dd style="font-family:var(--font-body)">${role}</dd>
+    <dt>自分の座標 Tag</dt><dd>${tag}</dd>
+    <dt>TS / NN / 近傍数</dt><dd>${r.tag ? `${r.ts} / ${r.nn} / ${r.count}` : '–'}</dd>
+    <dt>持っている形状</dt><dd>${r.ver === 0 ? '元の遺伝子' : '縮小版 v' + r.ver} （${r.gene.size} セル）</dd>
+    <dt>最小 ID の推定</dt><dd>${r.qid == null ? '–' : 'R' + r.qid + `（${r.qh} ホップ先）`}</dd>
+    <dt>選挙で聞いた最小 ID</dt><dd>${r.eid == null || r.ever !== r.ver ? '–' : 'R' + r.eid}</dd>
+    <dt>この tick に聞こえた</dt><dd>${heard} 台</dd>
+  </dl>
+  <div class="sub">記憶している近傍（距離 mm、何 tick 前に聞いたか）</div>
+  <div class="nbtable"><table><thead><tr><th>ID</th><th>状態</th><th class="mono">Tag</th><th class="mono">TS</th><th class="mono">距離</th><th class="mono">前</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  highlightGeneRow();
+}
+
+/* 遺伝子 */
+let editing = false;
+function renderGene() {
+  const rows = editing ? customRows : sim.rows;
+  const g = E.geneFromBitmap(rows);
+  const bm = $('bitmap');
+  bm.style.gridTemplateColumns = `repeat(${rows[0].length}, 15px)`;
+  bm.classList.toggle('edit', editing);
+  let h = '';
+  for (let i = 0; i < rows.length; i++) for (let j = 0; j < rows[0].length; j++) {
+    const on = rows[i][j] === '1', org = g.origin && g.origin[0] === i && g.origin[1] === j;
+    h += `<div class="c${on ? ' on' : ''}${org ? ' origin' : ''}" data-i="${i}" data-j="${j}">${on ? 1 : 0}</div>`;
+  }
+  bm.innerHTML = h;
+  renderGeneTable();
+  $('editTools').hidden = !editing;
+  if (editing) $('editCount').textContent = `${g.gene.size} セル = ${g.gene.size} 台`;
+  $('geneSub').textContent = editing ? '（編集中）' : '';
+}
+function renderGeneTable() {
+  const r = selected && selected.alive ? selected : null;
+  const gene = r ? r.gene : sim.gene0;
+  const list = [...gene.cells.values()].sort((a, b) => b.Y - a.Y || a.X - b.X);
+  $('genetable').querySelector('tbody').innerHTML = list.map(c => `<tr data-k="${c.X},${c.Y}"><td class="mono">${c.X}</td><td class="mono">${c.Y}</td><td class="mono">1</td><td class="mono">${c.NN}</td></tr>`).join('');
+  $('geneSub').textContent = r && r.ver > 0 ? `（R${r.id} が持つ縮小版 v${r.ver}）` : (editing ? '（編集中）' : `（${gene.size} セル）`);
+  highlightGeneRow();
+}
+let lastGeneOf = null;
+function highlightGeneRow() {
+  const r = selected;
+  const key = r && r.alive ? r.shape.sid : null;
+  if (key !== lastGeneOf) { lastGeneOf = key; renderGeneTable(); return; }
+  const tb = $('genetable').querySelector('tbody');
+  for (const tr of tb.querySelectorAll('tr.hl')) tr.classList.remove('hl');
+  if (r && r.tag) {
+    const tr = tb.querySelector(`tr[data-k="${r.tag[0]},${r.tag[1]}"]`);
+    if (tr) { tr.classList.add('hl'); const box = tb.parentElement.parentElement; const top = tr.offsetTop - box.clientHeight / 2; if (Math.abs(box.scrollTop - top) > box.clientHeight / 2) box.scrollTop = top; }
+  }
+}
+$('bitmap').addEventListener('click', (e) => {
+  if (!editing) return;
+  const c = e.target.closest('.c'); if (!c) return;
+  const i = +c.dataset.i, j = +c.dataset.j;
+  const row = customRows[i].split(''); row[j] = row[j] === '1' ? '0' : '1'; customRows[i] = row.join('');
+  renderGene();
+});
+$('btnApplyEdit').addEventListener('click', () => {
+  const g = E.geneFromBitmap(customRows);
+  if (g.gene.size < 3) { $('editCount').textContent = '3 セル以上必要です'; return; }
+  editing = false; shapeKey = 'custom'; newSim();
+});
+$('btnClearEdit').addEventListener('click', () => { customRows = customRows.map(r => '0'.repeat(r.length)); renderGene(); });
+
+/* ---------- 操作 ---------- */
+function setRunning(v) { running = v; $('btnPlay').textContent = running ? '一時停止' : '再生'; }
+setRunning(running);
+$('btnPlay').addEventListener('click', () => setRunning(!running));
+$('btnStep').addEventListener('click', () => { setRunning(false); sim.step(); updatePanels(); });
+$('btnReset').addEventListener('click', () => { newSim(); });
+$('selShape').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (v === 'custom') {
+    editing = true;
+    if (!customRows.length || customRows.length < 4) customRows = PRESETS.T.rows.slice();
+    // 編集しやすいよう 14×14 の余白をもつキャンバスにする
+    const H = Math.max(14, sim.rows.length), Wd = Math.max(14, sim.rows[0].length);
+    customRows = Array.from({ length: H }, (_, i) => (sim.rows[i] || '').padEnd(Wd, '0').slice(0, Wd));
+    renderGene();
+    return;
+  }
+  editing = false; shapeKey = v; newSim();
+});
+$('rngSpeed').addEventListener('input', (e) => { speed = +e.target.value; $('outSpeed').textContent = '×' + speed; });
+$('rngLoss').addEventListener('input', (e) => { const v = +e.target.value; $('outLoss').textContent = Math.round(v * 100) + '%'; if (sim) sim.P.loss = v; });
+$('optAux').addEventListener('change', (e) => { sim.P.noSeal = e.target.checked; });
+for (const [id, k] of [['optGhost', 'ghost'], ['optLinks', 'links'], ['optTrails', 'trails'], ['optIds', 'ids']]) $(id).addEventListener('change', (e) => { opts[k] = e.target.checked; });
+
+function setCutMode(v) { cutMode = v; $('btnCut').setAttribute('aria-pressed', String(v)); arena.classList.toggle('cutting', v); $('hint').textContent = v ? '群れを横切るように線をドラッグすると、その線で群れを切り離します（Esc で取り消し）。' : 'ロボットをクリックすると、そのロボットが「知っていること」を右に表示します。'; }
+$('btnCut').addEventListener('click', () => setCutMode(!cutMode));
+function presetCut(dir) {
+  const placed = sim.robots.filter(r => r.alive && r.tag && PLACED.has(r.state));
+  if (placed.length < 4) { sim.log('切るには、まず形がある程度できている必要があります', 'warn'); renderLog(); return; }
+  // いちばん大きい形のまとまりを、重心を通る線で切る
+  const g = sim.shapes()[0];
+  const mem = placed.filter(r => r.shape.sid === g.sid);
+  let cx = 0, cy = 0; for (const r of mem) { cx += r.x; cy += r.y; } cx /= mem.length; cy /= mem.length;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const r of mem) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y); }
+  const off = sim.P.d * 0.18;
+  if (dir === 'v') sim.cut(cx + off, y1 + 50, cx + off, y0 - 50); else sim.cut(x0 - 50, cy + off, x1 + 50, cy + off);
+  updatePanels();
+}
+$('btnCutV').addEventListener('click', () => presetCut('v'));
+$('btnCutH').addEventListener('click', () => presetCut('h'));
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.key === 'Escape') { cutDrag = null; setCutMode(false); }
+  if (e.key === ' ' && e.target === document.body) { e.preventDefault(); setRunning(!running); }
+});
+
+arena.addEventListener('pointerdown', (e) => {
+  const rect = cv.getBoundingClientRect(), sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  if (cutMode) { cutDrag = { sx0: sx, sy0: sy, sx1: sx, sy1: sy }; arena.setPointerCapture(e.pointerId); return; }
+  const [wx, wy] = toW(sx, sy);
+  let best = null, bd = Math.max(sim.P.R * 1.6, 10 / cam.s);
+  for (const r of sim.robots) { if (!r.alive) continue; const dd = Math.hypot(r.x - wx, r.y - wy); if (dd < bd) { bd = dd; best = r; } }
+  selected = best; lastGeneOf = '__'; renderInspect();
+});
+arena.addEventListener('pointermove', (e) => {
+  if (!cutDrag) return;
+  const rect = cv.getBoundingClientRect(); cutDrag.sx1 = e.clientX - rect.left; cutDrag.sy1 = e.clientY - rect.top;
+});
+arena.addEventListener('pointerup', () => {
+  if (!cutDrag) return;
+  const a = toW(cutDrag.sx0, cutDrag.sy0), b = toW(cutDrag.sx1, cutDrag.sy1);
+  cutDrag = null;
+  if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 20) { sim.cut(a[0], a[1], b[0], b[1]); updatePanels(); }
+  setCutMode(false);
+});
+
+/* 斜交座標系の説明図 */
+(function skewFigure() {
+  const g = $('skewFig'); const rows = ['0110', '1111', '1110'];
+  let h = '';
+  const sq = (x0, y0, skew) => {
+    for (let i = 0; i < rows.length; i++) for (let j = 0; j < rows[0].length; j++) {
+      const on = rows[i][j] === '1';
+      const x = x0 + j * 34 - (skew ? (rows.length - 1 - i) * 17 : 0), y = y0 + i * (skew ? 29.4 : 34);
+      h += `<circle cx="${x}" cy="${y}" r="11" fill="${on ? 'var(--st-stable)' : 'none'}" stroke="var(--muted)" stroke-width="1"/>`;
+    }
+  };
+  sq(40, 36, false); sq(330, 36, true);
+  h += `<path d="M196,70 L276,70" stroke="var(--ink)" stroke-width="1.5" marker-end="url(#skA)"/><defs><marker id="skA" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--ink)"/></marker></defs>`;
+  h += `<text x="236" y="60" text-anchor="middle" font-size="12" fill="var(--ink)">上の行ほど左へ半格子</text>`;
+  h += `<text x="90" y="140" text-anchor="middle" font-size="12" fill="var(--muted)">正方格子（斜めの隣は遠い）</text><text x="370" y="140" text-anchor="middle" font-size="12" fill="var(--muted)">三角格子（6 近傍が等距離）</text>`;
+  g.innerHTML = h;
+})();
+
+/* ---------- ループ ---------- */
+let frame = 0;
+function loop(now) {
+  if (running) {
+    const t0 = performance.now();
+    for (let i = 0; i < speed; i++) { sim.step(); if (performance.now() - t0 > 14) break; }
+  }
+  draw(now);
+  if (++frame % 6 === 0) updatePanels();
+  requestAnimationFrame(loop);
+}
+newSim();
+requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
