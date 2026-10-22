@@ -42,9 +42,15 @@ ABSTRACT = (
 KEYWORDS = "Drying, Characteristic Curve, Hair Bundle, Grain Model, Activation Energy"
 
 # 本文。各要素は ("h", 見出し) / ("p", 段落) / ("fig", ファイル, 幅mm, キャプション) / ("tab",) / ("eq",)
+# fig の 5 番目の要素 "top"/"bottom" は浮動配置（直後の段落と同じ段の上端/下端）。
+# 配置計画：1頁左下 Fig.1，1頁右下 Fig.2，2頁左上 Fig.4・左下 Fig.3，2頁右上 Fig.5。
+# アンカー段落は段の境目から離れた位置を選び，1段に上端・下端それぞれ1つまでとする。
 # 段落中の _{x} は下付き、^{x} は上付き、*x* は斜体（変数）として組む。
 BODY = [
     ("h", "１．緒　言"),
+    ("fig", "fig1_drying_curves.png", 68,
+     "Fig. 1  Measured drying behavior of hair bundles at 50, 90 and 130 °C: (a) drying characteristic "
+     "curves and (b) moisture content histories.", "bottom"),
     ("p", "毛髪は硬ケラチンを主成分とする生体繊維であり，含水状態で弾性や光沢が大きく変化する^{(1)}．"
           "近年のヘアドライヤは温度制御機能を備え，低温・大風量化による速乾と熱ダメージ抑制の両立が図られているが，"
           "過乾燥による過熱はヘアカラーの色抜けやケラチンの熱変性による髪質悪化を招く．"
@@ -59,9 +65,6 @@ BODY = [
           "（*T*_{d} = 50，90，130 ℃）中で質量を 2 min ごとに電子天秤（0.1 mg）で記録した．"
           "乾量基準含水率 *W*_{dry} = (*W* − *W*_{0})/*W*_{0} と，単繊維の総表面積 "
           "*A* = 4*W*_{0}/(*dρ*) = 0.01366 m^{2} を基準とする乾燥速度 *R* = −(*W*_{0}/*A*)d*W*_{dry}/d*t* を求めた．"),
-    ("fig", "fig1_drying_curves.png", 60,
-     "Fig. 1  Measured drying behavior of hair bundles at 50, 90 and 130 °C: (a) drying characteristic "
-     "curves and (b) moisture content histories."),
     ("h", "３．実験結果および考察"),
     ("h2", "3.1　乾燥特性曲線"),
     ("p", "Fig. 1 に乾燥特性曲線 (a) と含水率履歴 (b) を，Table 1 に特性値を示す．"
@@ -72,6 +75,8 @@ BODY = [
           "第 2 臨界含水率 *W*_{c2} = 0.62 kg/kg 以下の減率第 2 期間（III-2）ではほぼ直線的な速度低下を示した．"
           "この形状は全温度で共通であり，温度上昇に伴い *R*_{c} は約 7.4 倍に増加し，"
           "乾燥完了時間 *t*_{e} は 148 min から 42 min に短縮した．"),
+    ("fig", "fig3_arrhenius.png", 70,
+     "Fig. 2  Arrhenius plots of rate parameters in each drying period.", "bottom"),
     ("tab",),
     ("h2", "3.2　活性化エネルギー"),
     ("p", "各期間の代表速度（恒率速度 *R*_{c}，減率第 1 期の変曲点速度 *R*_{c2}，減率第 2 期の速度係数 *K*_{2}）の"
@@ -80,14 +85,14 @@ BODY = [
           "一般的な多孔体の内部拡散律速期（50〜80 kJ/mol）^{(2)}より小さかった．"
           "これは減率期においても蒸発面への水分補給が毛束間隙の毛細管流で維持され，"
           "気相境膜内の水蒸気移動が律速し続けることを示している．"),
-    ("fig", "fig3_arrhenius.png", 62,
-     "Fig. 2  Arrhenius plots of rate parameters in each drying period."),
     ("h2", "3.3　毛髪表面の SEM 観察"),
+    ("fig", "fig2_sem.png", 72,
+     "Fig. 3  SEM images of hair surfaces: (a) before drying and (b) after drying at 130 °C for 1 h.", "bottom"),
     ("p", "130 ℃で 1 h 乾燥した毛髪では，キューティクル端部の平滑化と鱗片の熱融着が観察された（Fig. 3）．"
           "水が蒸発している間は潜熱により毛髪温度は湿球温度付近に保たれるが，"
           "乾燥完了後は熱風温度まで上昇するため，過乾燥が熱損傷の主因と考えられる．"),
-    ("fig", "fig2_sem.png", 62,
-     "Fig. 3  SEM images of hair surfaces: (a) before drying and (b) after drying at 130 °C for 1 h."),
+    ("fig", "fig4_grain_model.png", 76,
+     "Fig. 4  Hierarchical grain model: (a) hair bundle as a pellet and (b) single fiber as a grain.", "top"),
     ("h", "４．階層的グレインモデル"),
     ("p", "多孔質反応工学のグレインモデル^{(3)}を拡張し，毛髪束をペレット，単繊維をグレインとみなした（Fig. 4）．"
           "減率第 1 期は繊維間マクロ空隙の水が毛細管力で外表面へ補給されつつ湿潤核が後退する過程，"
@@ -97,20 +102,18 @@ BODY = [
            "*θ* = (*W* − *W*_{e})/(*W*_{c2} − *W*_{e}) であり，*R*_{c2}^{*} は *W* = *W*_{c2} で速度が連続となる値である．"
            "式(1) は閉形式で時間積分でき，任意の含水率までの乾燥時間が得られる．"
            "130 ℃の実測に対する決定係数は *R*^{2} = 0.989 であった．"),
-    ("fig", "fig4_grain_model.png", 66,
-     "Fig. 4  Hierarchical grain model: (a) hair bundle as a pellet and (b) single fiber as a grain."),
     ("p", "さらに *R*_{c} = 98.85 exp(−18.58×10^{3}/*R*_{g}*T*) とし，構造パラメータ（*W*_{c1} = 2.50，"
           "*W*_{c2} = 0.70，*W*_{e} = 0.038 kg/kg，*α*_{M} = 0.35，*δ* = 0.090）を温度によらず一定とした"
           "温度連成モデルで 40〜140 ℃の乾燥挙動を予測した（Fig. 5）．実測との誤差は RMSE < 0.024 kg/kg であり，"
           "乾燥完了時間（*W* ≤ 0.05 kg/kg）は 40 ℃の約 171 min から 140 ℃の約 30 min まで短縮する．"),
-    ("fig", "fig5_prediction.png", 60,
-     "Fig. 5  Prediction by the temperature-coupled grain model (40–140 °C): (a) drying characteristic "
-     "curves and (b) moisture content histories. Dashed line: air temperature switched from 130 °C to "
-     "60 °C at W_c2."),
     ("h", "５．ドライヤ制御への応用"),
     ("p", "*W* ≥ *W*_{c2} では潜熱冷却により毛髪温度が低く保たれるため，高温（100〜130 ℃）の送風で速やかに"
           "水分を除去し，蒸発面が繊維内部へ沈んで毛髪温度が上昇し始める *W*_{c2} ≈ 0.70 kg/kg で"
           "60 ℃以下に切り替える制御（Fig. 5(b) 破線）が，速乾と熱変性・色抜けの防止の両立に有効である．"),
+    ("fig", "fig5_prediction.png", 72,
+     "Fig. 5  Prediction by the temperature-coupled grain model (40–140 °C): (a) drying characteristic "
+     "curves and (b) moisture content histories. Dashed line: air temperature switched from 130 °C to "
+     "60 °C at W_c2.", "top"),
     ("h", "６．結　言"),
     ("p", "(1) 毛髪束の乾燥特性曲線は恒率期と二段階の減率期からなる B 型であり，"
           "内部拡散支配（C 型）とする従来の見方は毛髪束には当てはまらない．"),
@@ -297,15 +300,15 @@ def build(template, out):
             p = body_par(doc, last, indent=False)
             add_rich(p, item[1], size=8)
         elif kind == "fig":
-            _, name, width, cap = item
+            _, name, width, cap, *pos = item
+            if pos:
+                add_float_figure(doc, last, name, width, cap, pos[0])
+                continue
             p = body_par(doc, last, indent=False, align=WD_ALIGN_PARAGRAPH.CENTER, keep_next=True, space_before=3)
             p.add_run().add_picture(str(FIG / name), width=Mm(width))
             c = body_par(doc, last, indent=False, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
-            c.paragraph_format.space_after = Pt(3)
-            c.paragraph_format.left_indent = Mm(2)
-            c.paragraph_format.right_indent = Mm(2)
-            cap = cap.replace("W_c2", "*W*_{c2}")
-            add_rich(c, cap, size=8)
+            caption_format(c)
+            add_rich(c, cap.replace("W_c2", "*W*_{c2}"), size=8)
         elif kind == "eq":
             p = body_par(doc, last, indent=False, space_before=2)
             p.paragraph_format.space_after = Pt(2)
@@ -327,9 +330,71 @@ def build(template, out):
     sp = last._p.pPr.find(qn("w:sectPr"))
     last._p.pPr.remove(sp)
     body.replace(body.find(qn("w:sectPr")), sp)
+    for tbl in doc.element.body.iter(qn("w:tbl")):
+        order_tblPr(tbl.tblPr)
     doc.core_properties.title = TITLE_JA
     doc.core_properties.author = "久保田 快"
     doc.save(out)
+
+
+def caption_format(c):
+    c.paragraph_format.space_after = Pt(3)
+    c.paragraph_format.left_indent = Mm(2)
+    c.paragraph_format.right_indent = Mm(2)
+
+
+def add_float_figure(doc, anchor, name, width, cap, pos):
+    """図とキャプションを段幅の 1×1 浮動表に入れ，段の上端（top）または下端（bottom）に固定する。
+
+    インライン画像だと，段の残りに収まらない図が次の段へ送られ大きな空白ができる。
+    浮動表にすると本文は図を避けて連続して流れるので空白が生じない。
+    表は直後の段落（アンカー）と同じ段・ページに配置される。
+    """
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    t = doc.add_table(rows=1, cols=1)
+    anchor._p.addprevious(t._tbl)
+    tblPr = t._tbl.tblPr
+    gap = int(Mm(2).twips)
+    tblPr.insert(0, parse_xml(
+        f'<w:tblpPr xmlns:w="{W}" w:leftFromText="0" w:rightFromText="0" w:topFromText="{gap if pos == "bottom" else 0}" '
+        f'w:bottomFromText="{gap if pos == "top" else 0}" w:vertAnchor="margin" w:horzAnchor="text" '
+        f'w:tblpXSpec="center" w:tblpYSpec="{pos}"/>'))
+    for tag, xml in (("w:tblOverlap", f'<w:tblOverlap xmlns:w="{W}" w:val="never"/>'),
+                     ("w:tblW", f'<w:tblW xmlns:w="{W}" w:w="{int(COL_W.twips)}" w:type="dxa"/>'),
+                     ("w:tblCellMar", f'<w:tblCellMar xmlns:w="{W}"><w:left w:w="0" w:type="dxa"/>'
+                                      f'<w:right w:w="0" w:type="dxa"/></w:tblCellMar>')):
+        old = tblPr.find(qn(tag))
+        if old is not None:
+            tblPr.remove(old)
+        tblPr.append(parse_xml(xml))
+    t._tbl.tblGrid.find(qn("w:gridCol")).set(qn("w:w"), str(int(COL_W.twips)))
+    cell = t.cell(0, 0)
+    cell.width = COL_W
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.line_spacing = 1.0
+    p.paragraph_format.keep_with_next = True
+    p.add_run().add_picture(str(FIG / name), width=Mm(width))
+    c = cell.add_paragraph()
+    c.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    c.paragraph_format.line_spacing = 1.0
+    caption_format(c)
+    c.paragraph_format.space_after = Pt(0)
+    add_rich(c, cap.replace("W_c2", "*W*_{c2}"), size=8)
+
+
+TBLPR_ORDER = ["tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize", "tblStyleColBandSize",
+               "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar",
+               "tblLook", "tblCaption", "tblDescription"]
+
+
+def order_tblPr(tblPr):
+    """w:tblPr の子要素をスキーマ順に並べ替える（Word は順序違反のファイルを壊れていると判定する）。"""
+    rank = {qn("w:" + n): i for i, n in enumerate(TBLPR_ORDER)}
+    kids = sorted(tblPr, key=lambda e: rank.get(e.tag, len(rank)))
+    for k in kids:
+        tblPr.remove(k)
+        tblPr.append(k)
 
 
 def add_table(doc, anchor):

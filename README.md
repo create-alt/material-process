@@ -19,7 +19,7 @@
 | `tools/grain_model.py` | 温度連成グレインモデル（式(8)–(11)）の Python 実装 |
 | `tools/digitize_figs.py` | 論文PDFのグラフ画像 → 実測データ CSV |
 | `tools/make_figures.py` | 概要用の図を作成 |
-| `tools/make_abstract.py` | テンプレート docx から概要原稿を作成（本文テキストもこのファイル内） |
+| `tools/make_abstract.py` | テンプレート docx から概要原稿を作成（本文テキストもこのファイル内）。図は段の上端/下端に固定した浮動枠として配置し、図の位置による余白が出ないようにしている |
 
 ## シミュレータでできること
 
