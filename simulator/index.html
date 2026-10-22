@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>毛髪束乾燥シミュレータ</title>
+<style>
+:root{--bg:#f7f7f4;--fg:#1d1d1b;--mut:#6b6b66;--card:#fff;--bd:#dcdcd4;--ac:#c2410c;--grid:#e8e8e0;--warn:#b91c1c;--ok:#15803d;--water:#2563eb;--keratin:#c8a878}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16161a;--fg:#ececea;--mut:#9a9a94;--card:#222226;--bd:#3a3a40;--ac:#fb923c;--grid:#33333a;--warn:#f87171;--ok:#4ade80;--water:#60a5fa;--keratin:#a88a5c}}
+:root[data-theme="dark"]{--bg:#16161a;--fg:#ececea;--mut:#9a9a94;--card:#222226;--bd:#3a3a40;--ac:#fb923c;--grid:#33333a;--warn:#f87171;--ok:#4ade80;--water:#60a5fa;--keratin:#a88a5c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;padding:14px max(14px,env(safe-area-inset-right)) 40px max(14px,env(safe-area-inset-left))}
+.wrap{max-width:1180px;margin:auto}
+h1{font-size:20px;margin:4px 0 2px}h2{font-size:14px;margin:0 0 8px}h3{font-size:13px;margin:10px 0 4px}
+p.s,.s{color:var(--mut);font-size:12px;margin:4px 0}
+.layout{display:grid;grid-template-columns:340px 1fr;gap:12px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:1fr}}
+.side{position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto}
+@media (max-width:860px){.side{position:static;max-height:none}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px;min-width:0}
+.row{display:grid;grid-template-columns:1fr auto;gap:0 8px;margin:6px 0;font-size:12.5px}
+.row b{font-variant-numeric:tabular-nums;color:var(--ac);font-weight:600}
+input[type=range]{grid-column:1/3;width:100%;accent-color:var(--ac);margin:2px 0}
+select{grid-column:1/3;width:100%;padding:4px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font-size:12.5px}
+label.c{font-size:12.5px;display:flex;gap:6px;align-items:center;margin:5px 0}
+button{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer}
+button:hover{border-color:var(--ac)}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.kpi{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.k{border:1px solid var(--bd);border-radius:8px;padding:7px 9px}.k small{color:var(--mut);display:block;font-size:11px;line-height:1.3}.k span{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.k.w span{color:var(--warn)}.k.g span{color:var(--ok)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+canvas{width:100%;display:block}
+canvas.ch{height:270px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
+.tabs button{border-radius:999px;padding:6px 12px;font-size:13px}
+.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.pane{display:none}.pane.on{display:block}
+table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{border-bottom:1px solid var(--bd);padding:5px 6px;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:500}
+.tw{overflow-x:auto}
+.eq{font-family:"Times New Roman",serif;font-size:14px;overflow-x:auto;padding:6px 8px;background:var(--bg);border-radius:6px;margin:6px 0;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;border:1px solid var(--bd);border-radius:4px;padding:0 4px;color:var(--mut);margin-left:4px;vertical-align:1px}
+.tag.as{border-color:#a16207;color:#a16207}
+details summary{cursor:pointer;font-size:13px;font-weight:600}
+.bundle{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:12px;align-items:center}
+@media (max-width:600px){.bundle{grid-template-columns:1fr}}
+#cvB{height:auto;aspect-ratio:1;max-width:320px;margin:auto}
+ul.chk{padding-left:18px;margin:4px 0;font-size:12.5px}ul.chk li{margin:3px 0}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--mut);margin-top:4px}
+.leg i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px;border-radius:2px}
+</style></head><body><div class="wrap">
+<h1>毛髪束 乾燥シミュレータ</h1>
+<p class="s">温度連成グレインモデル（論文 式(5)–(11)）＋湿り空気・毛髪温度・熱損傷の評価。久保田・平林「恒温恒湿熱風環境における毛髪束の乾燥挙動と乾燥特性曲線の評価」（2026）に基づく。<span class="tag">論文</span>は論文の式・値、<span class="tag as">仮定</span>は理解を助けるために追加した論文外の仮定モデルです。</p>
+
+<div class="layout">
+<!-- ===== 左：操作パネル ===== -->
+<div class="side">
+<div class="card"><h2>送風条件</h2>
+<div class="row"><span>熱風温度 T</span><b id="vT"></b><input type="range" id="T" min="40" max="140" step="1" value="130"></div>
+<label class="c"><input type="checkbox" id="sw">Wc2 到達で送風温度を切替（ドライヤ制御 §4.4）</label>
+<div class="row" id="swr"><span>切替後の温度 T₂</span><b id="vT2"></b><input type="range" id="T2" min="25" max="140" step="1" value="60"></div>
+<div class="row"><span>送風の絶対湿度 H</span><b id="vH"></b><input type="range" id="H" min="1" max="60" step="0.5" value="3"></div>
+<p class="s" id="vRH"></p>
+<div class="btns"><button data-h="3">RH 15 %（25 ℃吸込・論文条件）</button><button data-h="9.9">RH 50 %（25 ℃）</button><button data-h="16">浴室後 RH 80 %</button></div>
+<div class="row"><span>目標含水率 W<sub>target</sub></span><b id="vTg"></b><input type="range" id="tg" min="0.05" max="1.5" step="0.01" value="0.15"></div>
+<p class="s">論文の「乾燥完了」は W ≤ 0.05 kg/kg。室内平衡の毛髪は概ね 0.10〜0.15 kg/kg です。</p>
+</div>
+
+<div class="card"><h2>乾燥速度モデル</h2>
+<div class="row"><span>恒率速度 R<sub>c</sub>(T) の与え方</span><span></span>
+<select id="rcm">
+<option value="eq8">式(8) 相関式 A₀=98.85, Ea=18.58 kJ/mol（論文）</option>
+<option value="t3">Table 3 恒率期 A₀=1.70×10³, Ea=27.60 kJ/mol（論文）</option>
+<option value="ht">伝熱律速 R_c = h(T−T_wb)/L（130 ℃実測に h を合わせる）</option>
+</select></div>
+<details><summary>構造パラメータ（Table 4）</summary><div id="pp"></div>
+<div class="btns"><button id="b2c1">β₂ を Wc2 で C¹ 連続となる値に</button><button id="b2z">β₂ = 0（Fig.6 の直線減率）</button><button id="rst">初期値に戻す</button></div>
+<p class="s" id="b2note"></p>
+<label class="c"><input type="checkbox" id="weIso">We を収着等温線（GAB）から決める <span class="tag as">相平衡</span></label>
+</details>
+</div>
+
+<div class="card"><details><summary>毛髪温度・熱損傷の仮定 <span class="tag as">仮定</span></summary>
+<div class="row"><span>結合水の脱着熱 q₀（W→0）</span><b id="vq0"></b><input type="range" id="q0" min="0" max="1500" step="50" value="1000"></div>
+<div class="row"><span>ケラチン変成温度（乾燥毛）</span><b id="vtdd"></b><input type="range" id="tdd" min="100" max="240" step="5" value="150"></div>
+<div class="row"><span>ケラチン変成温度（湿潤毛）</span><b id="vtdw"></b><input type="range" id="tdw" min="50" max="150" step="5" value="80"></div>
+<div class="row"><span>色素退色の活性化エネルギー</span><b id="vEd"></b><input type="range" id="Ed" min="20" max="120" step="5" value="60"></div>
+<p class="s">変成温度 T<sub>den</sub>(W) = T<sub>dry</sub> − (T<sub>dry</sub> − T<sub>wet</sub>)(1 − e<sup>−W/0.1</sup>)：水分が多いほど低い（DSC 文献の傾向）。色抜け指数は ∫exp[−E<sub>d</sub>/R(1/T<sub>s</sub> − 1/333 K)]dt で、「60 ℃で何分加熱したのと同等か」を表します。いずれも定性的な比較用です。</p>
+</details></div>
+</div>
+
+<!-- ===== 右：結果 ===== -->
+<div>
+<div class="card"><div class="kpi" id="kpi"></div></div>
+
+<div class="tabs" id="tabs">
+<button data-p="p1" class="on">乾燥特性</button><button data-p="p2">毛束の内部</button><button data-p="p3">温度と熱損傷</button><button data-p="p4">温度依存性</button><button data-p="p5">湿り空気・相平衡</button><button data-p="p6">制御の比較</button><button data-p="p7">式と論文チェック</button>
+</div>
+
+<div class="pane on" id="p1">
+<div class="grid2">
+<div class="card"><h2>乾燥特性曲線 R – W<sub>dry</sub>（式(10)）</h2><canvas class="ch" id="c1"></canvas><div class="leg" id="l1"></div></div>
+<div class="card"><h2>含水率履歴 W<sub>dry</sub> – t（式(11)）</h2><canvas class="ch" id="c2"></canvas><div class="leg" id="l2"></div></div>
+</div>
+<div class="card">
+<label class="c"><input type="checkbox" id="cmp" checked>40〜140 ℃（20 ℃刻み）を重ね描き</label>
+<label class="c"><input type="checkbox" id="exp" checked>実測（論文 Fig.3 から読取り：50・90・130 ℃）を重ねる</label>
+<p class="s">乾燥特性曲線は 3 段：<b>恒率期 II</b>（毛束外周の自由水膜からの蒸発、気相境膜律速で R = R<sub>c</sub>）→ <b>減率第1期 III-1</b>（繊維間マクロ空隙の水が毛細管力で外へ補給され、弦より上に膨らむ「上に凸」= B 型）→ <b>減率第2期 III-2</b>（W<sub>c2</sub> で空隙水が尽き、単繊維ケラチン内の結合水の拡散律速）。実測点は画像から数値化したため ±0.02 程度の読取り誤差を含みます。モデルは Table 4 の 1 組のパラメータで全温度を表すため、50 ℃など個々の温度では実測とずれます（下の「式と論文チェック」参照）。</p>
+</div>
+</div>
+
+<div class="pane" id="p2">
+<div class="card"><h2>階層的グレインモデル：毛束（ペレット）と単繊維（グレイン）</h2>
+<div class="bundle"><canvas id="cvB" width="320" height="320"></canvas>
+<div><div class="row"><span>時間 t</span><b id="vts"></b><input type="range" id="ts" min="0" max="1000" step="1" value="0"></div>
+<div class="btns"><button id="play">▶ 再生</button></div>
+<div class="kpi" id="kb"></div>
+<p class="s" id="phaseTxt"></p></div></div>
+<p class="s">外側の水色の輪＝毛束外周の自由水膜、繊維のすき間の青＝マクロ空隙水（半径 r<sub>m</sub> の湿潤核が後退）、繊維の色＝繊維内の結合水（θ）。外枠の色は毛髪温度（青：低温 → 赤：高温）。r<sub>m</sub> は空隙水量に比例する円柱核として r<sub>m</sub> = R<sub>0</sub>√[(W − W<sub>c2</sub>)/(W<sub>c1</sub> − W<sub>c2</sub>)] で描画しています（可視化のための仮定）。</p></div>
+</div>
+
+<div class="pane" id="p3">
+<div class="card"><h2>毛髪温度 T<sub>s</sub> – t <span class="tag as">仮定</span></h2><canvas class="ch" id="c3" style="height:300px"></canvas><div class="leg" id="l3"></div>
+<p class="s">集中定数の熱収支：C dT<sub>s</sub>/dt = G(T<sub>air</sub> − T<sub>s</sub>) − ṁ[L(T<sub>s</sub>) + q<sub>s</sub>(W)]、C = m<sub>h</sub>(1300 + 4180W)。総括伝熱コンダクタンス G は恒率期に T<sub>s</sub> が湿球温度 T<sub>wb</sub> になるよう較正（Lewis 数 = 1）。q<sub>s</sub>(W) = q₀e<sup>−W/0.11</sup> は結合水の脱着熱。水が蒸発している間は潜熱で冷やされ T<sub>s</sub> ≈ T<sub>wb</sub>、W<sub>c2</sub> 以降は蒸発が細り T<sub>s</sub> が上昇、乾燥完了後は送風温度まで一気に上がる——論文 §3.2 の SEM で見られたキューティクル熱融着の原因です。</p></div>
+<div class="grid2">
+<div class="card"><h2>熱損傷の累積</h2><canvas class="ch" id="c4"></canvas><div class="leg" id="l4"></div></div>
+<div class="card"><h2>この条件での損傷指標</h2><div class="kpi" id="kd"></div>
+<p class="s">「変成超過量」= ∫max(0, T<sub>s</sub> − T<sub>den</sub>(W))dt［K·min］。0 なら一度も変成温度を超えていません。目標含水率に達した時点で送風を止める想定で評価しています。</p></div>
+</div>
+</div>
+
+<div class="pane" id="p4">
+<div class="grid2">
+<div class="card"><h2>アレニウスプロット（論文 Fig.4・Table 3）</h2><canvas class="ch" id="c5"></canvas><div class="leg" id="l5"></div>
+<p class="s">点は論文 Fig.4 から読取り、破線はその回帰。各期の見かけの活性化エネルギーは 25〜28 kJ/mol に収まり、水の蒸発潜熱（約 40〜44 kJ/mol）より小さい → 減率期でも毛細管補給と境膜拡散が効いている、というのが論文の主張です。実線は現在選択中の R<sub>c</sub>(T) モデル。</p></div>
+<div class="card"><h2>温度と特性値（モデル vs 実測 Table 2）</h2><div class="tw"><table id="tbT"></table></div>
+<p class="s">t<sub>e</sub>：乾燥完了時間（モデルは W ≤ 0.05 kg/kg）。実測の W<sub>c1</sub>・W<sub>c2</sub>・W<sub>e</sub> は温度ごとに異なりますが、モデルは温度によらず一定（Table 4）と仮定しています。</p></div>
+</div>
+</div>
+
+<div class="pane" id="p5">
+<div class="grid2">
+<div class="card"><h2>湿り空気：送風温度と湿球温度・相対湿度</h2><canvas class="ch" id="c6"></canvas><div class="leg" id="l6"></div>
+<p class="s">絶対湿度 H 一定の空気を加熱すると相対湿度は急低下し（加熱除湿）、湿球温度はゆっくりしか上がりません。恒率期の毛髪温度は湿球温度に張り付くため、高温送風でも濡れている間は毛髪は比較的低温です。</p></div>
+<div class="card"><h2>毛髪の水分収着等温線（GAB 式） <span class="tag as">仮定</span></h2><canvas class="ch" id="c7"></canvas><div class="leg" id="l7"></div>
+<p class="s">W = X<sub>m</sub>CKa<sub>w</sub>/[(1 − Ka<sub>w</sub>)(1 − Ka<sub>w</sub> + CKa<sub>w</sub>)]、X<sub>m</sub> = 0.07, C = 8, K = 0.8（ヒト毛髪の文献値の傾向に合わせた値）。平衡含水率は「空気の相対湿度」で決まり、乾燥のゴール W<sub>e</sub> を与えます（相平衡）。</p></div>
+</div>
+</div>
+
+<div class="pane" id="p6">
+<div class="card"><h2>送風プロファイルの比較</h2><div class="tw"><table id="tbS"></table></div>
+<p class="s">各行を同じ毛束・同じ湿度で計算し、目標含水率に達した時点で送風停止とした比較です。加熱量指数 = ∫(T<sub>air</sub> − 25)dt（風量一定とした相対的な電力量の目安）。「高温→W<sub>c2</sub>で低温」が、速さと熱損傷の両立を狙う論文 §4.4 の提案です。</p></div>
+<div class="card"><h2>毛髪温度の比較</h2><canvas class="ch" id="c8" style="height:300px"></canvas><div class="leg" id="l8"></div></div>
+</div>
+
+<div class="pane" id="p7">
+<div class="card"><h2>モデル式（論文）</h2>
+<div class="eq">A = 4W<sub>0</sub>/(dρ)　(3)　　R = −(W<sub>0</sub>/A)·dW/dt　(4)</div>
+<div class="eq">R(W;T) = R<sub>c</sub>(T)　(W ≥ W<sub>c1</sub>)；　R<sub>c</sub>/[1 + α<sub>M</sub> ln(u<sub>1</sub>/u)]　(W<sub>c2</sub> ≤ W &lt; W<sub>c1</sub>)；　R<sub>c2</sub>*θ[1 + β<sub>2</sub>(1 − θ)]　(W<sub>e</sub> &lt; W &lt; W<sub>c2</sub>)　(10)</div>
+<div class="eq">u = W − W<sub>c2</sub> + δ,　u<sub>1</sub> = W<sub>c1</sub> − W<sub>c2</sub> + δ,　θ = (W − W<sub>e</sub>)/(W<sub>c2</sub> − W<sub>e</sub>),　R<sub>c2</sub>* = R<sub>c</sub>/[1 + α<sub>M</sub> ln(u<sub>1</sub>/δ)]　(9)</div>
+<div class="eq">t(W;T) = (W<sub>init</sub> − W)/K<sub>c</sub>；　t<sub>c</sub> + [(1 + α<sub>M</sub>)(W<sub>c1</sub> − W) − α<sub>M</sub>u ln(u<sub>1</sub>/u)]/K<sub>c</sub>；　t<sub>c2</sub> + [ln(1/θ) + ln(1 + β<sub>2</sub>(1 − θ))]/[K<sub>2</sub>(1 + β<sub>2</sub>)]　(11)</div>
+<div class="eq">K<sub>c</sub> = (A/W<sub>0</sub>)R<sub>c</sub>,　K<sub>2</sub> = (A/W<sub>0</sub>)R<sub>c2</sub>*/(W<sub>c2</sub> − W<sub>e</sub>)　（R が W<sub>c2</sub> で連続となる条件から）</div>
+<p class="s">シミュレータは式(11)の閉形式解（一定温度）と、式(10)の数値積分（温度切替・毛髪温度の計算）の両方を使っています。下の「検算」で両者が一致することを確認できます。</p>
+</div>
+<div class="card"><h2>検算と論文との対応チェック</h2><ul class="chk" id="chk"></ul></div>
+</div>
+</div>
+</div>
+
+<script>
+"use strict";
+// ---------- 論文 Fig.3 から数値化した実測データ（tools/digitize_figs.py） ----------
+const EXP={"RW":{"130C_MA5":[[3.744,0.3591],[3.316,0.359],[2.817,0.3553],[2.341,0.3573],[1.897,0.3508],[1.466,0.3255],[1.019,0.2863],[0.619,0.2356],[0.367,0.1737],[0.203,0.1128],[0.141,0.0661],[0.116,0.0363],[0.074,0.0208],[0.06,0.0152],[0.032,0.0083]],"130C_measured":[[3.745,0.3344],[2.817,0.3808],[1.897,0.3411],[1.466,0.3432],[1.404,0.3207],[1.33,0.3145],[1.018,0.3301],[0.621,0.2541],[0.39,0.1803],[0.366,0.1627],[0.347,0.1676],[0.203,0.0879],[0.145,0.0335],[0.116,0.025]],"50C_MA5":[[3.078,0.0468],[3.02,0.0475],[2.959,0.0479],[2.896,0.0478],[2.83,0.0491],[2.77,0.049],[2.714,0.0475],[2.632,0.0479],[2.591,0.0476],[2.524,0.0456],[2.462,0.0445],[2.41,0.0447],[2.35,0.0439],[2.301,0.0434],[2.237,0.0433],[2.181,0.0436],[2.132,0.0435],[2.072,0.0432],[2.019,0.0434],[1.959,0.0439],[1.905,0.0449],[1.85,0.0441],[1.789,0.043],[1.706,0.0435],[1.624,0.0416],[1.569,0.0418],[1.513,0.0427],[1.465,0.0415],[1.41,0.0415],[1.353,0.0421],[1.301,0.0419],[1.248,0.0411],[1.189,0.0409],[1.145,0.0409],[1.09,0.0402],[1.036,0.0399],[0.985,0.0399],[0.936,0.0392],[0.883,0.0388],[0.836,0.0385],[0.785,0.0385],[0.735,0.0375],[0.688,0.0357],[0.618,0.0336],[0.561,0.0308],[0.499,0.0299],[0.428,0.0291],[0.207,0.0177]],"50C_measured":[[2.715,0.0538],[2.591,0.0417],[2.524,0.0515],[1.79,0.0494],[1.688,0.0374],[1.625,0.0475]],"90C_MA5":[[3.329,0.2682],[3.001,0.2567],[2.626,0.2429],[2.297,0.2234],[2.057,0.1956],[1.816,0.1682],[1.65,0.1499],[1.468,0.1361],[1.3,0.1265],[1.133,0.1191],[0.992,0.1089],[0.851,0.1005],[0.739,0.0928],[0.633,0.083],[0.51,0.0741],[0.424,0.0671],[0.35,0.0575],[0.287,0.0476],[0.22,0.0407],[0.184,0.0346],[0.144,0.0275]],"90C_measured":[[3.329,0.2566],[3.001,0.2741],[2.626,0.274],[2.163,0.2084],[2.057,0.1881],[1.815,0.1587],[1.734,0.1589],[1.65,0.1352],[1.605,0.1461],[1.058,0.1137],[0.739,0.0846],[0.686,0.088],[0.633,0.0894],[0.51,0.081],[0.465,0.0707],[0.426,0.0612],[0.386,0.0624],[0.319,0.0526]]},"WT":{"130C":[[2.0,3.749],[4.0,3.321],[6.0,2.821],[8.0,2.345],[10.0,1.901],[12.0,1.468],[14.0,1.02],[16.0,0.622],[18.0,0.368],[20.1,0.203],[21.6,0.143],[23.6,0.119],[25.6,0.081],[27.6,0.063],[29.6,0.045],[31.6,0.038],[33.6,0.034],[35.6,0.031],[37.6,0.031],[39.6,0.027],[41.6,0.022],[43.6,0.022],[45.6,0.02],[47.6,0.02],[49.6,0.02],[51.6,0.02],[53.6,0.02],[55.6,0.02],[57.6,0.02]],"50C":[[3.0,3.053],[6.0,2.962],[8.0,2.9],[9.6,2.834],[11.6,2.776],[13.6,2.72],[17.0,2.616],[20.0,2.527],[21.6,2.465],[23.6,2.414],[25.6,2.358],[27.6,2.307],[29.6,2.242],[31.6,2.186],[33.6,2.136],[37.0,2.049],[39.6,1.962],[41.6,1.911],[43.6,1.855],[46.0,1.793],[49.1,1.708],[51.6,1.626],[53.6,1.573],[55.6,1.519],[57.6,1.47],[59.6,1.416],[61.6,1.356],[63.6,1.306],[65.7,1.251],[67.7,1.192],[69.7,1.148],[71.7,1.094],[73.7,1.042],[75.7,0.987],[77.7,0.942],[79.7,0.888],[81.7,0.839],[83.7,0.79],[85.7,0.738],[87.7,0.691],[89.7,0.638],[91.7,0.606],[93.7,0.566],[95.7,0.523],[97.7,0.485],[99.7,0.45],[101.7,0.412],[103.7,0.369],[105.7,0.333],[107.7,0.306],[109.7,0.28],[111.7,0.253],[113.7,0.217],[115.7,0.192],[117.7,0.174],[119.7,0.15],[121.7,0.134],[123.7,0.121],[125.7,0.107],[127.7,0.096],[129.7,0.085],[131.7,0.072],[133.7,0.058],[135.7,0.056],[137.7,0.043],[139.7,0.043],[141.7,0.036],[143.7,0.029],[145.7,0.029],[147.7,0.027],[149.7,0.025],[151.7,0.027],[153.7,0.027],[155.7,0.025],[157.7,0.022],[159.7,0.02],[161.7,0.022],[163.7,0.02],[165.7,0.02],[167.7,0.022],[169.7,0.02],[171.7,0.02],[173.7,0.022],[175.7,0.02],[177.7,0.022]],"90C":[[1.8,3.335],[6.0,2.63],[8.0,2.28],[10.0,2.059],[12.0,1.817],[14.0,1.652],[16.0,1.471],[18.0,1.302],[20.0,1.136],[22.0,0.994],[24.0,0.852],[26.0,0.74],[28.0,0.635],[30.0,0.511],[32.0,0.426],[34.0,0.351],[36.0,0.287],[37.6,0.222],[39.6,0.186],[41.6,0.143],[43.6,0.11],[45.6,0.085],[47.6,0.078],[49.6,0.069],[51.6,0.063],[53.6,0.056],[59.6,0.038],[61.6,0.025],[63.6,0.025],[65.6,0.022],[67.6,0.02],[69.6,0.02],[71.6,0.02],[73.6,0.02],[75.6,0.022],[77.6,0.02]]}};
+// 論文 Table 2（実測の特性値）
+const TAB2={50:{Rc:0.048,Wc1:3.124,Wc2:0.744,tc:20,te:148,We:0.182},90:{Rc:0.252,Wc1:3.009,Wc2:2.068,tc:7,te:78,We:0.171},130:{Rc:0.355,Wc1:2.247,Wc2:0.623,tc:10,te:42,We:0.098}};
+// 論文 Fig.4 から読取った ln k（130, 90, 50 ℃）
+const ARR={Rc:[-1.032,-1.377,-3.045],Rc2:[-1.445,-1.50,-3.25],K2:[-0.873,-2.27,-2.99]};
+const EXPC={"50C":"#2563eb","90C":"#10b981","130C":"#ef4444"};
+const TC=[[40,"#3b4cc0"],[60,"#6f92f3"],[80,"#aac7fd"],[100,"#f7b89c"],[120,"#e7745b"],[140,"#b40426"]];
+
+// ---------- パラメータ ----------
+const D={Winit:[3.30,2,4,0.01,"初期含水率 W_init [kg/kg]"],Wc1:[2.50,1,3.3,0.01,"第1臨界含水率 Wc1 [kg/kg]"],Wc2:[0.70,0.2,1.5,0.01,"第2臨界含水率 Wc2 [kg/kg]"],We:[0.038,0,0.2,0.001,"終局平衡含水率 We [kg/kg]"],aM:[0.35,0,1.5,0.01,"αM マクロ細孔拡散抵抗係数 [−]"],dl:[0.09,0.01,0.3,0.005,"δ 境界平滑化パラメータ [−]"],b2:[0,-0.9,2,0.01,"β₂ 単繊維二次補正係数 [−]（論文に値なし）"],W0:[0.3553,0.05,3,0.0001,"正味絶乾質量 W0 [g]"],d:[80,40,120,1,"単繊維径 d [μm]"]};
+const P={};const $=id=>document.getElementById(id);
+for(const k in D)$("pp").insertAdjacentHTML("beforeend",`<div class="row"><span>${D[k][4]}</span><b id="v${k}"></b><input type="range" id="p${k}" min="${D[k][1]}" max="${D[k][2]}" step="${D[k][3]}" value="${D[k][0]}"></div>`);
+const RHO=1300,Rg=8.314,TREF=25;
+
+// ---------- 湿り空気 ----------
+function ps(T){return Math.pow(10,T>100?8.14019-1810.94/(244.485+T):8.07131-1730.63/(233.426+T))*0.133322;} // Antoine [kPa]
+const Lv=T=>2501-2.37*T; // 蒸発潜熱 [kJ/kg]
+const H2p=H=>H*101.325/(0.622+H);
+const RH=(T,H)=>Math.min(1,H2p(H)/ps(T));
+function Twb(T,H){let lo=-10,hi=T;for(let i=0;i<60;i++){const m=(lo+hi)/2,p=ps(m),Hs=p>=101.3?1e3:0.622*p/(101.325-p);((T-m)*(1.006+1.86*H)-Lv(m)*(Hs-H)>0)?lo=m:hi=m;}return (lo+hi)/2;}
+// GAB 収着等温線
+const GAB=a=>{const Xm=0.07,C=8,K=0.8;return Xm*C*K*a/((1-K*a)*(1-K*a+C*K*a));};
+
+// ---------- 乾燥速度（論文 式(8)〜(11)） ----------
+let H=0.003;
+function Rc(T){const m=$("rcm").value;
+ if(m==="t3")return 1.70e3*Math.exp(-27600/(Rg*(T+273.15)));
+ if(m==="ht"){const h=0.355*Lv(Twb(130,H))/(130-Twb(130,H));return Math.max(0,h*(T-Twb(T,H))/Lv(Twb(T,H)));}
+ return 98.85*Math.exp(-18580/(Rg*(T+273.15)));}
+const area=()=>4*(P.W0/1000)/(P.d*1e-6*RHO); // [m2]
+const kA=()=>area()/(P.W0/1000)/60; // R[kg/m2h] → dW/dt[1/min]
+const u1=()=>P.Wc1-P.Wc2+P.dl;
+const Dn=()=>1+P.aM*Math.log(u1()/P.dl);
+const Rc2s=T=>Rc(T)/Dn();
+function rate(W,T){const c=Rc(T);
+ if(W>=P.Wc1)return c;
+ if(W>=P.Wc2)return c/(1+P.aM*Math.log(u1()/(W-P.Wc2+P.dl)));
+ if(W>P.We){const th=(W-P.We)/(P.Wc2-P.We);return Rc2s(T)*th*(1+P.b2*(1-th));}
+ return 0;}
+function tAnalytic(W,T){const Kc=kA()*Rc(T);if(Kc<=0)return Infinity;
+ if(W>=P.Wc1)return (P.Winit-W)/Kc;
+ const tc=(P.Winit-P.Wc1)/Kc;
+ if(W>=P.Wc2){const u=W-P.Wc2+P.dl;return tc+((1+P.aM)*(P.Wc1-W)-P.aM*u*Math.log(u1()/u))/Kc;}
+ const tc2=tc+((1+P.aM)*(P.Wc1-P.Wc2)-P.aM*P.dl*Math.log(u1()/P.dl))/Kc;
+ if(W<=P.We)return Infinity;
+ const K2=kA()*Rc2s(T)/(P.Wc2-P.We),th=(W-P.We)/(P.Wc2-P.We);
+ return tc2+(Math.log(1/th)+Math.log(1+P.b2*(1-th)))/(K2*(1+P.b2));}
+const b2C1=()=>1-P.aM*(P.Wc2-P.We)/(P.dl*Dn());
+
+// ---------- 時間積分：含水率＋毛髪温度＋損傷 ----------
+const Tden=W=>{const a=+$("tdd").value,b=+$("tdw").value;return a-(a-b)*(1-Math.exp(-W/0.1));};
+function calib(T){const tw=Twb(T,H),r=Rc(T);return{tw,G:area()*r/3600*Lv(tw)*1000/Math.max(T-tw,0.5)};}
+// prof(W) → 送風温度。tg に達したら（stopAtTarget のとき）送風停止。
+function sim(prof,tg,opt={}){
+ const dt=0.01,mh=P.W0/1000,k=kA(),q0=+$("q0").value,Ed=+$("Ed").value*1000,cache={};
+ let t=0,W=P.Winit,Ts=TREF,i=0,tt=null,tc=null,tc2=null,te=null,maxTs=Ts,over=0,cf=0,heat=0,cx=null,TsTg=null;
+ const pts=[],end=opt.tEnd||600;
+ while(t<end){const Ta=prof(W),r=rate(W,Ta),cb=cache[Ta]||(cache[Ta]=calib(Ta));
+  if(i++%20===0)pts.push([t,W,Ts,Ta,Tden(W),over,cf]);
+  if(tc===null&&W<P.Wc1)tc=t;if(tc2===null&&W<P.Wc2)tc2=t;if(te===null&&W<=0.05)te=t;
+  if(tt===null&&W<=tg){tt=t;TsTg=Ts;if(opt.stop)break;}
+  if(tt!==null&&te!==null&&t>Math.max(tt,te)+(opt.tail??8))break;
+  if(W<=P.We+1e-4&&tt===null&&t>5&&Math.abs(cb.G*(Ta-Ts))<1e-4)break;
+  const qs=q0*Math.exp(-W/0.11),C=mh*(1300+4180*W),m=area()*r/3600; // m: 蒸発速度 [kg/s]
+  Ts+=(cb.G*(Ta-Ts)-m*(Lv(Ts)+qs)*1000)/C*dt*60;
+  W=Math.max(P.We,W-k*r*dt);
+  if(tt===null||!opt.stop){const ex=Ts-Tden(W);if(ex>0){over+=ex*dt;if(cx===null)cx=t;}
+   cf+=Math.exp(-Ed/Rg*(1/(Ts+273.15)-1/333.15))*dt;heat+=(Ta-TREF)*dt;}
+  maxTs=Math.max(maxTs,Ts);t+=dt;}
+ pts.push([t,W,Ts,prof(W),Tden(W),over,cf]);
+ return{pts,tt,tc,tc2,te,maxTs,over,cf,heat,cx,TsTg};}
+
+// ---------- 描画ユーティリティ ----------
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function nice(a,b,n=5){const r=(b-a)/n,p=Math.pow(10,Math.floor(Math.log10(r))),f=r/p,s=(f<1.5?1:f<3?2:f<7?5:10)*p,out=[];for(let v=Math.ceil(a/s-1e-9)*s;v<=b+1e-9;v+=s)out.push(+v.toFixed(10));return out;}
+function plot(cv,o){const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;if(!w)return null;cv.width=w*d;cv.height=h*d;const g=cv.getContext("2d");g.scale(d,d);
+ const mut=css("--mut"),gr=css("--grid"),fg=css("--fg"),L=48,R=o.y2?46:10,T=10,B=36;
+ const [x0,x1]=o.x,[y0,y1]=o.y,X=x=>L+(x-x0)/(x1-x0)*(w-L-R),Y=y=>h-B-(y-y0)/(y1-y0)*(h-B-T);
+ g.font="11px sans-serif";g.lineWidth=1;g.strokeStyle=gr;g.fillStyle=mut;
+ for(const x of nice(x0,x1,Math.max(3,Math.floor(w/80)))){g.beginPath();g.moveTo(X(x),T);g.lineTo(X(x),h-B);g.stroke();g.textAlign="center";g.fillText(+x.toFixed(3),X(x),h-B+14);}
+ for(const y of nice(y0,y1,5)){g.beginPath();g.moveTo(L,Y(y));g.lineTo(w-R,Y(y));g.stroke();g.textAlign="right";g.fillText(+y.toFixed(3),L-5,Y(y)+4);}
+ g.textAlign="center";g.fillText(o.xl,(L+w-R)/2,h-5);g.save();g.translate(12,(h-B+T)/2);g.rotate(-Math.PI/2);g.fillText(o.yl,0,0);g.restore();
+ let Y2=null;if(o.y2){const[a,b]=o.y2.r;Y2=y=>h-B-(y-a)/(b-a)*(h-B-T);g.textAlign="left";for(const y of nice(a,b,5))g.fillText(+y.toFixed(3),w-R+5,Y2(y)+4);g.save();g.translate(w-6,(h-B+T)/2);g.rotate(Math.PI/2);g.textAlign="center";g.fillText(o.y2.l,0,0);g.restore();}
+ g.save();g.beginPath();g.rect(L,T,w-L-R,h-B-T);g.clip();
+ for(const v of o.v||[]){g.setLineDash([4,3]);g.strokeStyle=v.c||mut;g.beginPath();g.moveTo(X(v.x),T);g.lineTo(X(v.x),h-B);g.stroke();g.setLineDash([]);g.fillStyle=v.c||mut;g.textAlign="left";g.fillText(v.l,X(v.x)+3,T+11+(v.dy||0));}
+ for(const v of o.h||[]){g.setLineDash([4,3]);g.strokeStyle=v.c||mut;g.beginPath();g.moveTo(L,Y(v.y));g.lineTo(w-R,Y(v.y));g.stroke();g.setLineDash([]);g.fillStyle=v.c||mut;g.textAlign="right";g.fillText(v.l,w-R-4,Y(v.y)-4);}
+ for(const s of o.s){const YY=s.y2?Y2:Y;g.strokeStyle=g.fillStyle=s.c;g.globalAlpha=s.a??1;g.lineWidth=s.w||1.4;g.setLineDash(s.dash||[]);
+  if(s.m){for(const p of s.d){const px=X(p[0]),py=YY(p[1]);g.beginPath();if(s.m==="x"){g.lineWidth=1.3;g.moveTo(px-3,py-3);g.lineTo(px+3,py+3);g.moveTo(px+3,py-3);g.lineTo(px-3,py+3);g.stroke();}else{g.arc(px,py,s.r||2.6,0,7);g.fill();}}}
+  if(!s.m||s.line){g.beginPath();let st=false;for(const p of s.d){if(!isFinite(p[1])||!isFinite(p[0])){st=false;continue;}st?g.lineTo(X(p[0]),YY(p[1])):g.moveTo(X(p[0]),YY(p[1]));st=true;}g.stroke();}
+  g.setLineDash([]);g.globalAlpha=1;}
+ for(const p of o.p||[]){g.fillStyle=p.c||css("--ac");g.beginPath();g.arc(X(p.x),Y(p.y),4.5,0,7);g.fill();g.textAlign=X(p.x)>w*0.65?"right":"left";g.fillText(p.l,X(p.x)+(X(p.x)>w*0.65?-8:8),Y(p.y)-7);}
+ if(o.cur!=null){g.strokeStyle=fg;g.lineWidth=1;g.beginPath();g.moveTo(X(o.cur),T);g.lineTo(X(o.cur),h-B);g.stroke();}
+ g.restore();g.strokeStyle=mut;g.strokeRect(L,T,w-L-R,h-B-T);return{X,Y};}
+function legend(id,items){$(id).innerHTML=items.map(([c,l,dash])=>`<span><i style="background:${dash?`repeating-linear-gradient(90deg,${c} 0 4px,transparent 4px 7px)`:c}"></i>${l}</span>`).join("");}
+const f=(v,n=1,u="")=>v==null||!isFinite(v)?"—":v.toFixed(n)+u;
+const kpi=(id,arr)=>$(id).innerHTML=arr.map(([l,v,c])=>`<div class="k ${c||""}"><small>${l}</small><span>${v}</span></div>`).join("");
+
+// ---------- 状態 ----------
+let M=null,curT=0,playing=false;
+function readP(){for(const k in D){P[k]=+$("p"+k).value;$("v"+k).textContent=k==="W0"?P[k].toFixed(4):P[k];}
+ if($("weIso").checked){P.We=GAB(RH(+$("T").value,H));$("vWe").textContent=P.We.toFixed(3)+"（GAB）";}}
+function prof(){const T=+$("T").value,T2=+$("T2").value,sw=$("sw").checked;return sw?(W=>W>=P.Wc2?T:T2):(()=>T);}
+
+function update(){
+ H=+$("H").value/1000;readP();
+ const T=+$("T").value,T2=+$("T2").value,sw=$("sw").checked,tg=+$("tg").value;
+ $("vT").textContent=T+" ℃";$("vT2").textContent=T2+" ℃";$("swr").style.display=sw?"grid":"none";
+ $("vH").textContent=(H*1000).toFixed(1)+" g/kg";$("vRH").textContent="相対湿度：25 ℃の吸込空気で "+(RH(25,H)*100).toFixed(0)+" %、"+T+" ℃に加熱後 "+(RH(T,H)*100).toFixed(1)+" %";
+ $("vTg").textContent=tg.toFixed(2)+" kg/kg（湿量基準 "+(tg/(1+tg)*100).toFixed(0)+"%）";
+ $("vq0").textContent=$("q0").value+" kJ/kg";$("vtdd").textContent=$("tdd").value+" ℃";$("vtdw").textContent=$("tdw").value+" ℃";$("vEd").textContent=$("Ed").value+" kJ/mol";
+ $("b2note").textContent=`現在の構造パラメータで、W_c2 において R の傾きまで連続（C¹）となる β₂ は ${b2C1().toFixed(3)} です。論文 Fig.6 の Phase III-2 は直線（β₂ = 0）に見えます。`;
+ M=sim(prof(),tg,{stop:false,tail:10});
+ const tw=Twb(T,H),cal=calib(T),last=M.pts[M.pts.length-1];
+ const stopM=sim(prof(),tg,{stop:true});
+ kpi("kpi",[
+  ["目標含水率への到達時間",f(M.tt,1," min"),"g"],["乾燥完了 W≤0.05（論文の t_e）",f(M.te,1," min")],
+  ["恒率期終了 t_c / W_c2 到達 t_c2",f(M.tc,1)+" / "+f(M.tc2,1)+" min"],["恒率乾燥速度 R_c(T)",f(Rc(T),3)+" kg/m²h"],
+  ["湿球温度 T_wb（恒率期の毛髪温度）",f(tw,1," ℃")],["目標到達時の毛髪温度",f(stopM.TsTg,1," ℃"),stopM.over>0?"w":""],
+  ["変成温度を超える時刻",M.cx==null?"超えない":f(M.cx,1," min"),M.cx==null?"g":"w"],["伝熱蒸発面積 A",area().toFixed(5)+" m²"],
+ ]);
+ drawAll();}
+
+function drawP1(){
+ const T=+$("T").value,cmp=$("cmp").checked,ex=$("exp").checked,ac=css("--ac"),tg=+$("tg").value;
+ const Ws=[];for(let i=0;i<=400;i++)Ws.push(P.Winit-(P.Winit-Math.max(P.We,0.0005))*i/400);
+ const S1=[],S2=[],L1=[],L2=[];
+ if(cmp)for(const[t,c]of TC){S1.push({d:Ws.map(w=>[w,rate(w,t)]),c,a:.75,w:1.1});S2.push({d:Ws.filter(w=>w>P.We+1e-3).map(w=>[tAnalytic(w,t),w]),c,a:.75,w:1.1});L1.push([c,t+" ℃"]);}
+ if(ex)for(const s of["50C","90C","130C"]){const c=EXPC[s];S1.push({d:EXP.RW[s+"_MA5"],c,m:"o",r:2.2,line:1,w:1,a:.9});S1.push({d:EXP.RW[s+"_measured"],c,m:"x",a:.9});S2.push({d:EXP.WT[s],c,m:"o",r:2,a:.85});L2.push([c,"実測 "+s.replace("C"," ℃")]);}
+ const main=$("sw").checked?M.pts.map(p=>[p[1],rate(p[1],p[3])]):Ws.map(w=>[w,rate(w,T)]);
+ S1.push({d:main,c:ac,w:2.6});
+ let ym=0.1;S1.forEach(s=>s.d.forEach(p=>{if(p[1]>ym)ym=p[1]}));
+ plot($("c1"),{x:[0,Math.max(4,P.Winit)],y:[0,ym*1.08],xl:"W_dry [kg/kg-dry]",yl:"R [kg/(m²·h)]",s:S1,
+  v:[{x:P.Wc1,l:"Wc1"},{x:P.Wc2,l:"Wc2"},{x:tg,l:"目標",c:ac,dy:14}],p:[{x:tg,y:rate(tg,$("sw").checked&&tg<P.Wc2?+$("T2").value:T),l:""}]});
+ legend("l1",[[ac,"現在の条件（モデル）"],...L1,...L2.map(x=>[x[0],x[1]+"（●移動平均 ×実測）"])]);
+ S2.push({d:M.pts.map(p=>[p[0],p[1]]),c:ac,w:2.6});
+ if(!$("sw").checked){const an=Ws.filter(w=>w>P.We+1e-3).map(w=>[tAnalytic(w,T),w]);S2.push({d:an,c:css("--fg"),w:1,dash:[3,3]});}
+ const xm=Math.min(600,Math.max(60,(cmp?tAnalytic(0.05,40):0),M.te||0,M.tt||0,ex?180:0)*1.02);
+ plot($("c2"),{x:[0,xm],y:[0,Math.max(4,P.Winit)],xl:"t [min]",yl:"W_dry [kg/kg-dry]",s:S2,h:[{y:tg,l:"目標 "+tg.toFixed(2),c:ac},{y:P.Wc2,l:"Wc2"}],
+  v:[M.tc!=null?{x:M.tc,l:"tc"}:null,M.tc2!=null?{x:M.tc2,l:"tc2",dy:14}:null].filter(Boolean),p:M.tt!=null?[{x:M.tt,y:tg,l:"t = "+M.tt.toFixed(1)+" min"}]:[]});
+ legend("l2",[[ac,"現在の条件（数値積分）"],...($("sw").checked?[]:[[css("--fg"),"式(11) 閉形式解",1]]),...L2]);}
+
+function drawP3(){
+ const ac=css("--ac"),T=+$("T").value,tw=Twb(T,H),pts=M.pts,xm=pts[pts.length-1][0];
+ const hl=[{y:T,l:"送風 "+T+" ℃",c:ac},{y:tw,l:"湿球 "+tw.toFixed(0)+" ℃"}];if($("sw").checked)hl.push({y:+$("T2").value,l:"切替後 "+$("T2").value+" ℃"});
+ const ym=Math.max(T,...pts.map(p=>p[2]),...pts.map(p=>p[4]))*1.08;
+ plot($("c3"),{x:[0,xm],y:[0,ym],xl:"t [min]",yl:"T_s [℃]",s:[{d:pts.map(p=>[p[0],p[4]]),c:"#a21caf",dash:[6,4],w:1.6},{d:pts.map(p=>[p[0],p[3]]),c:css("--mut"),w:1,a:.7},{d:pts.map(p=>[p[0],p[2]]),c:ac,w:2.6},{d:pts.map(p=>[p[0],p[1]]),c:"#2563eb",w:1.2,y2:1,a:.8}],
+  y2:{r:[0,Math.max(4,P.Winit)],l:"W_dry [kg/kg]"},h:hl,v:[M.tc!=null?{x:M.tc,l:"tc"}:null,M.tc2!=null?{x:M.tc2,l:"tc2",dy:14}:null,M.tt!=null?{x:M.tt,l:"目標",c:ac,dy:28}:null].filter(Boolean),
+  p:M.cx!=null?[{x:M.cx,y:pts.find(p=>p[0]>=M.cx)?.[2]??T,l:"変成温度超え",c:css("--warn")}]:[]});
+ legend("l3",[[ac,"毛髪温度 T_s"],["#a21caf","変成温度 T_den(W)",1],[css("--mut"),"送風温度"],["#2563eb","含水率（右軸）"]]);
+ plot($("c4"),{x:[0,xm],y:[0,Math.max(10,M.over*1.1)],xl:"t [min]",yl:"変成超過量 [K·min]",s:[{d:pts.map(p=>[p[0],p[5]]),c:css("--warn"),w:2},{d:pts.map(p=>[p[0],p[6]]),c:"#0891b2",w:2,y2:1}],
+  y2:{r:[0,Math.max(5,M.cf*1.1)],l:"色抜け指数 [60℃換算 min]"},v:M.tt!=null?[{x:M.tt,l:"目標",c:ac}]:[]});
+ legend("l4",[[css("--warn"),"変成超過量（左軸）"],["#0891b2","色抜け指数（右軸）"]]);
+ const sm=sim(prof(),+$("tg").value,{stop:true});
+ kpi("kd",[["最高毛髪温度（目標到達まで）",f(sm.maxTs,1," ℃"),sm.over>0?"w":""],["変成超過量",f(sm.over,0," K·min"),sm.over>0?"w":"g"],["色抜け指数（60 ℃換算）",f(sm.cf,1," min")],["加熱量指数 ∫(T−25)dt",f(sm.heat/1000,2," ×10³ K·min")]]);}
+
+// 毛束断面の描画（グレインモデルの可視化）
+const FIB=(()=>{const a=[];const r=0.118;for(let q=-4;q<=4;q++)for(let s=-4;s<=4;s++){const x=(q+s/2)*2*r*1.02,y=s*Math.sqrt(3)*r*1.02;if(Math.hypot(x,y)<0.86-r)a.push([x,y]);}return{a,r};})();
+function lerpC(a,b,t){const p=s=>[1,3,5].map(i=>parseInt(s.slice(i,i+2),16));const A=p(a),B=p(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(",")})`;}
+function tempC(T){const t=Math.max(0,Math.min(1,(T-20)/120));return t<.5?lerpC("#3b82f6","#facc15",t*2):lerpC("#facc15","#dc2626",(t-.5)*2);}
+function drawBundle(){
+ const pts=M.pts,tmax=pts[pts.length-1][0],t=curT*tmax/1000;let i=pts.findIndex(p=>p[0]>=t);if(i<0)i=pts.length-1;const [tt,W,Ts,Ta,Td]=pts[i];
+ $("vts").textContent=tt.toFixed(1)+" min";
+ const cv=$("cvB"),d=devicePixelRatio||1,w=cv.clientWidth||300;cv.width=w*d;cv.height=w*d;const g=cv.getContext("2d");g.scale(d,d);
+ const cx=w/2,cy=w/2,S=w*0.42,water=css("--water");
+ const film=W>P.Wc1?(W-P.Wc1)/Math.max(1e-6,P.Winit-P.Wc1):0;
+ const core=W>=P.Wc2?Math.sqrt(Math.min(1,(W-P.Wc2)/(P.Wc1-P.Wc2))):0;
+ const th=W>=P.Wc2?1:Math.max(0,(W-P.We)/(P.Wc2-P.We));
+ // 温度リング
+ g.lineWidth=6;g.strokeStyle=tempC(Ts);g.beginPath();g.arc(cx,cy,S*(1+0.07+film*0.08),0,7);g.stroke();
+ // 外周水膜
+ if(film>0){g.fillStyle=water;g.globalAlpha=.35;g.beginPath();g.arc(cx,cy,S*(1+film*0.08+0.03),0,7);g.fill();g.globalAlpha=1;}
+ // 束内の空隙（乾いた部分）
+ g.fillStyle=css("--card");g.beginPath();g.arc(cx,cy,S,0,7);g.fill();g.strokeStyle=css("--mut");g.lineWidth=1;g.stroke();
+ // 空隙水の湿潤核
+ if(core>0){g.fillStyle=water;g.globalAlpha=.55;g.beginPath();g.arc(cx,cy,S*core,0,7);g.fill();g.globalAlpha=1;
+  g.setLineDash([4,3]);g.strokeStyle=water;g.beginPath();g.arc(cx,cy,S*core,0,7);g.stroke();g.setLineDash([]);}
+ // 単繊維
+ for(const[x,y]of FIB.a){const px=cx+x*S,py=cy+y*S,r=FIB.r*S*(0.92+0.08*th);
+  g.fillStyle=th>0?lerpC("#efe6d6","#7a8fb8",th*0.8):"#efe6d6";
+  g.beginPath();g.arc(px,py,r,0,7);g.fill();g.strokeStyle=Ts>Td?css("--warn"):"#8b6b45";g.lineWidth=Ts>Td?2:1;g.stroke();
+  g.fillStyle="#f8f3ea";g.beginPath();g.arc(px,py,r*0.22,0,7);g.fill();}
+ const ph=W>=P.Wc1?"恒率乾燥期間（Phase II）":W>=P.Wc2?"減率第1期間（Phase III-1）":W>P.We+0.002?"減率第2期間（Phase III-2）":"平衡（Phase IV）";
+ kpi("kb",[["乾燥期間",ph],["含水率 W",f(W,3," kg/kg")],["毛髪温度 T_s",f(Ts,1," ℃"),Ts>Td?"w":""],["変成温度 T_den(W)",f(Td,0," ℃")],["湿潤核半径 r_m/R_0",f(core,2)],["繊維内水分 θ",f(th,2)]]);
+ $("phaseTxt").textContent={"恒率乾燥期間（Phase II）":"毛束の外周が水膜で覆われ、熱風からの伝熱量がそのまま蒸発潜熱に使われる。速度一定・毛髪温度は湿球温度。","減率第1期間（Phase III-1）":"外周の水膜が消え、繊維間の空隙水が毛細管力で外へ吸い上げられながら湿潤核が後退。濡れ面積が急には減らないので速度低下は緩やか（上に凸）。","減率第2期間（Phase III-2）":"空隙水が尽き、蒸発面が単繊維内部のケラチンへ沈む。結合水の拡散律速で速度は直線的に低下し、潜熱冷却が弱まって毛髪温度が上がる。","平衡（Phase IV）":"これ以上水分は抜けない。潜熱冷却が止まり、毛髪温度は送風温度へ。熱損傷が最も起こりやすい状態。"}[ph];
+ }
+
+function drawP4(){
+ const ac=css("--ac"),xs=[2.4,3.25],Tk=[403.15,363.15,323.15].map(t=>1000/t),S=[];
+ const sty={Rc:["#2563eb","恒率 R_c（27.60 kJ/mol）"],Rc2:["#ea580c","減率1期 R_c2（25.08 kJ/mol）"],K2:["#7c3aed","減率2期 K_2（27.87 kJ/mol）"]};
+ for(const k in ARR){const y=ARR[k],n=3,mx=Tk.reduce((a,b)=>a+b)/n,my=y.reduce((a,b)=>a+b)/n;let sxy=0,sxx=0;Tk.forEach((x,i)=>{sxy+=(x-mx)*(y[i]-my);sxx+=(x-mx)**2;});const b=sxy/sxx,a=my-b*mx;
+  S.push({d:Tk.map((x,i)=>[x,y[i]]),c:sty[k][0],m:"o",r:k==="Rc"?5:3.5});S.push({d:xs.map(x=>[x,a+b*x]),c:sty[k][0],dash:[5,4],w:1});}
+ const mod=[];for(let x=2.4;x<=3.25;x+=0.01){const T=1000/x-273.15;mod.push([x,Math.log(Math.max(1e-9,Rc(T)))]);}
+ S.push({d:mod,c:ac,w:2.4});
+ plot($("c5"),{x:[2.4,3.25],y:[-4,0.3],xl:"1000/T [1/K]",yl:"ln k",s:S,p:[{x:1000/(+$("T").value+273.15),y:Math.log(Rc(+$("T").value)),l:$("T").value+" ℃"}]});
+ legend("l5",[...Object.values(sty).map(v=>[v[0],v[1]]),[ac,"選択中の R_c(T) モデル"]]);
+ let h="<tr><th>T [℃]</th><th>R_c モデル</th><th>R_c 実測</th><th>t_c モデル</th><th>t_c 実測</th><th>t_e モデル</th><th>t_e 実測</th><th>T_wb</th></tr>";
+ for(const T of[40,50,60,80,90,100,120,130,140]){const e=TAB2[T];h+=`<tr${e?' style="font-weight:600"':""}><td>${T}</td><td>${Rc(T).toFixed(3)}</td><td>${e?e.Rc.toFixed(3):""}</td><td>${f(tAnalytic(P.Wc1,T),1)}</td><td>${e?e.tc:""}</td><td>${f(tAnalytic(0.05,T),1)}</td><td>${e?e.te:""}</td><td>${Twb(T,H).toFixed(1)}</td></tr>`;}
+ $("tbT").innerHTML=h;}
+
+function drawP5(){
+ const ac=css("--ac"),T=+$("T").value,S1=[],S2=[],Ts=[];for(let t=20;t<=150;t+=1)Ts.push(t);
+ plot($("c6"),{x:[20,150],y:[0,100],xl:"送風温度 T [℃]",yl:"温度 [℃]",s:[{d:Ts.map(t=>[t,t]),c:css("--mut"),w:1,dash:[3,3]},{d:Ts.map(t=>[t,Twb(t,H)]),c:"#2563eb",w:2.2},{d:Ts.map(t=>[t,RH(t,H)*100]),c:"#0891b2",w:1.6,y2:1}],
+  y2:{r:[0,100],l:"相対湿度 [%]"},p:[{x:T,y:Twb(T,H),l:"T_wb = "+Twb(T,H).toFixed(1)+" ℃"}]});
+ legend("l6",[["#2563eb","湿球温度 T_wb（左軸）"],["#0891b2","相対湿度（右軸）"],[css("--mut"),"乾球 = 送風温度",1]]);
+ const iso=[];for(let a=0;a<=0.97;a+=0.01)iso.push([a*100,GAB(a)]);
+ const pts=[{x:RH(25,H)*100,y:GAB(RH(25,H)),l:"吸込 25 ℃",c:"#0891b2"},{x:RH(T,H)*100,y:GAB(RH(T,H)),l:"送風 "+T+" ℃",c:ac}];
+ plot($("c7"),{x:[0,100],y:[0,0.4],xl:"相対湿度 a_w [%]",yl:"平衡含水率 W_e [kg/kg]",s:[{d:iso,c:"#16a34a",w:2.2}],h:[{y:0.038,l:"Table 4 W_e = 0.038"},{y:P.We,l:"現在の W_e",c:ac}],p:pts});
+ legend("l7",[["#16a34a","GAB 等温線"],[ac,"運転点"]]);}
+
+function drawP6(){
+ const T=+$("T").value,tg=+$("tg").value,ac=css("--ac");
+ const cases=[["一定 60 ℃",()=>60],["一定 90 ℃",()=>90],["一定 130 ℃",()=>130],["130 ℃ → W_c2 で 60 ℃",W=>W>=P.Wc2?130:60],["100 ℃ → W_c2 で 50 ℃",W=>W>=P.Wc2?100:50],["現在の設定",prof()]];
+ const cols=["#2563eb","#10b981","#ef4444","#a21caf","#ea580c",ac];
+ let h="<tr><th>送風プロファイル</th><th>到達時間 [min]</th><th>最高 T_s [℃]</th><th>変成超過 [K·min]</th><th>色抜け指数</th><th>加熱量指数</th></tr>",S=[],ref=null;
+ cases.forEach(([n,p],i)=>{const r=sim(p,tg,{stop:true});if(i===2)ref=r;r.n=n;S.push({d:r.pts.map(q=>[q[0],q[2]]),c:cols[i],w:i===5?2.6:1.5,dash:i===5?[]:undefined});cases[i].r=r;});
+ cases.forEach(([n],i)=>{const r=cases[i].r;h+=`<tr><td>${n}</td><td>${f(r.tt,1)}</td><td style="color:${r.over>0?css("--warn"):""}">${f(r.maxTs,1)}</td><td>${f(r.over,0)}</td><td>${f(r.cf,1)}</td><td>${ref?f(r.heat/ref.heat*100,0,"%"):""}</td></tr>`;});
+ $("tbS").innerHTML=h;
+ const xm=Math.max(...cases.map(c=>c.r.pts[c.r.pts.length-1][0]));
+ plot($("c8"),{x:[0,Math.min(xm,300)],y:[0,150],xl:"t [min]",yl:"T_s [℃]",s:S});
+ legend("l8",cases.map((c,i)=>[cols[i],c[0]]));}
+
+function drawP7(){
+ const T=+$("T").value,tg=0.3,an=tAnalytic(tg,T),num=sim(()=>T,tg,{stop:true}).tt,c1=b2C1();
+ const Rcw=Rc(T),u=u1(),D1=Dn(),sl1=Rcw*P.aM/(u*1);
+ const items=[
+  `検算：${T} ℃で W = ${tg} に達する時間　閉形式解 式(11) = <b>${f(an,2)} min</b>、数値積分 = <b>${f(num,2)} min</b>（一致すれば式(11)の導出が正しい）。`,
+  `式(3)：A = 4W₀/(dρ) = <b>${area().toFixed(5)} m²</b>（論文 0.01366 m²）。`,
+  `式(8) の R_c は 130 ℃で ${Rc(130).toFixed(3)}、50 ℃で ${Rc(50).toFixed(3)} kg/(m²h)（"選択中のモデル"）。実測（Table 2）は 0.355 / 0.048。相関式(8) の Ea = 18.58 kJ/mol は恒率期のアレニウス解析値 27.60 kJ/mol より小さく、低温側で速度を約 2 倍に見積もります。`,
+  `乾燥完了時間（W ≤ 0.05）：本実装の式(11) では 40 ℃で <b>${f(tAnalytic(0.05,40),0)} min</b>、140 ℃で <b>${f(tAnalytic(0.05,140),0)} min</b>（β₂ = ${P.b2}）。論文本文 §5.4 は「約 195 min → 約 28 min」。β₂ をどう変えても 2 つを同時には合わせられないため、本文の数値か計算条件を確認する価値があります。`,
+  `C¹ 連続性：W_c1 では R は連続ですが傾きは 0 → R_c α_M/u₁ = ${sl1.toFixed(3)} と不連続（C⁰）。W_c2 で傾きまで一致するのは β₂ = <b>${c1.toFixed(3)}</b> のときだけで、Fig.6 の直線減率（β₂ = 0）とは両立しません。「C¹ 連続接合」の表現は「速度が連続（C⁰）」とするのが正確です。`,
+  `Table 2 の 90 ℃の W_c2 = 2.068 kg/kg は、本文「W_c2 ≈ 0.60〜0.74 kg/kg で温度に依存せずほぼ一定」と矛盾します（0.68 前後の誤記の可能性）。`,
+  `式(6)・(11) の 1 行目の分子「W₀ − W」の W₀ は絶乾質量 W₀ [g] と記号が重複しています。初期含水率 W_init と書くべきです。また K_c = AR_c/W₀ は [1/h] なので、t [min] で使うには 1/60 が必要です。`,
+  `活性化エネルギー：Fig.4 の点を回帰すると R_c 27.8、減率1期(◆) 25.2、減率2期(▲) 28.2 kJ/mol で Table 3 と一致します（読取り誤差内）。`,
+ ];
+ $("chk").innerHTML=items.map(x=>`<li>${x}</li>`).join("");}
+
+function drawAll(){const on=document.querySelector(".pane.on").id;
+ if(on==="p1")drawP1();if(on==="p2")drawBundle();if(on==="p3")drawP3();if(on==="p4")drawP4();if(on==="p5")drawP5();if(on==="p6")drawP6();if(on==="p7")drawP7();}
+
+// ---------- イベント ----------
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.id===b.dataset.p));drawAll();});
+document.querySelectorAll("input,select").forEach(e=>e.addEventListener("input",()=>{if(e.id==="ts"){curT=+e.value;drawBundle();}else update();}));
+document.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{$("H").value=b.dataset.h;update();});
+$("b2c1").onclick=()=>{$("pb2").value=b2C1().toFixed(2);update();};
+$("b2z").onclick=()=>{$("pb2").value=0;update();};
+$("rst").onclick=()=>{for(const k in D)$("p"+k).value=D[k][0];$("weIso").checked=false;$("rcm").value="eq8";update();};
+$("play").onclick=()=>{playing=!playing;$("play").textContent=playing?"❚❚ 停止":"▶ 再生";if(playing&&curT>=1000)curT=0;const step=()=>{if(!playing)return;curT=Math.min(1000,curT+3);$("ts").value=curT;drawBundle();if(curT>=1000){playing=false;$("play").textContent="▶ 再生";return;}requestAnimationFrame(step);};requestAnimationFrame(step);};
+addEventListener("resize",drawAll);
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",drawAll);
+update();
+</script>
+</body></html>
