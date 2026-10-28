@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>求人パースHub - 採用情報コピペ＆CSV変換ツール</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">求人パースHub <span class="badge">揺らぎ対応版</span></h1>
+          <p class="brand-subtitle">採用情報のテキストをコピペするだけで自動項目抽出 ＆ Excel対応CSV出力</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnAiSettings" class="btn btn-outline" title="Gemini AI連携設定">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+          </svg>
+          AI設定 <span id="aiStatusBadge" class="ai-status-off">OFF</span>
+        </button>
+        <button id="btnExportCsv" class="btn btn-primary" title="蓄積したデータをCSVでダウンロード">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          CSVエクスポート (<span id="exportCountBadge">0</span>)
+        </button>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ (左右2カラム) -->
+    <main class="main-container">
+      <!-- 左ペイン: テキスト入力 & パース作業エリア -->
+      <section class="panel panel-input">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="step-num">1</span>
+            <h2>URLから読込 または 採用テキストをペースト</h2>
+          </div>
+          <div class="panel-tools">
+            <span class="sample-label">サンプル読込:</span>
+            <button class="btn-chip" data-sample="kosen">JR西日本/高専卒</button>
+            <button class="btn-chip" data-sample="tech">ITエンジニア</button>
+            <button class="btn-chip" data-sample="sales">企画営業</button>
+            <button class="btn-chip" data-sample="flexible">自由形式求人</button>
+            <button id="btnClearRaw" class="btn-chip btn-chip-danger" title="クリア">クリア</button>
+          </div>
+        </div>
+
+        <!-- URL直接読み込みバー -->
+        <div class="url-fetch-bar">
+          <div class="url-input-group">
+            <span class="url-icon">🔗</span>
+            <input type="url" id="jobUrlInput" value="https://www.mhi.com/jp/recruit/kosen/info/requirement" placeholder="https://... 募集要項ページのURLを入力して直接読み込み">
+          </div>
+          <button id="btnFetchUrl" class="btn btn-primary btn-sm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"></path>
+            </svg>
+            URLから取得＆解析
+          </button>
+        </div>
+
+        <div class="input-area-wrapper">
+          <textarea id="rawJobText" placeholder="求人票や転職サイトの募集要項テキストをここに貼り付けてください...&#10;&#10;例:&#10;【企業名】株式会社イノベーション&#10;【職種】フロントエンドエンジニア&#10;【給与】想定年収 550万〜900万円&#10;【勤務地】東京都千代田区（フルリモート相談可）&#10;..."></textarea>
+          
+          <div class="input-floating-bar">
+            <div class="input-stats">
+              <span id="charCount">0</span> 文字
+            </div>
+            <div class="action-buttons">
+              <button id="btnParseText" class="btn btn-accent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                項目を自動解析
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- テキスト選択補助ツール（スナイパーマッピング） -->
+        <div class="sniper-helper">
+          <div class="sniper-header">
+            <span class="sniper-icon">🎯</span>
+            <span class="sniper-title">テキスト選択マッピング (手動クイック割り当て):</span>
+            <span class="sniper-desc">テキストを選んでボタンを押すと即時反映</span>
+          </div>
+          <div class="sniper-chips" id="sniperChips">
+            <button class="chip-assign" data-target="companyName">会社名へ</button>
+            <button class="chip-assign" data-target="jobTitle">職種へ</button>
+            <button class="chip-assign" data-target="salary">給与へ</button>
+            <button class="chip-assign" data-target="location">勤務地へ</button>
+            <button class="chip-assign" data-target="employmentType">雇用形態へ</button>
+            <button class="chip-assign" data-target="requirements">必須要件へ</button>
+            <button class="chip-assign" data-target="preferred">歓迎要件へ</button>
+            <button class="chip-assign" data-target="jobDescription">仕事内容へ</button>
+            <button class="chip-assign" data-target="benefits">福利厚生へ</button>
+          </div>
+        </div>
+
+        <!-- 揺らぎ吸収ルール状況 -->
+        <div class="parser-intel-card">
+          <div class="intel-header">
+            <span class="intel-badge">内蔵インテリジェンス</span>
+            <span>200+パターンの見出し表現・シノニム（同義語）辞書を常時適用中</span>
+          </div>
+          <div class="intel-tags">
+            <span title="給与・想定年収・月額・賞与・賃金・報酬など">💰 給与/報酬 18種</span>
+            <span title="勤務地・就業場所・所在地・アクセス・拠点など">📍 勤務地/リモート 15種</span>
+            <span title="応募資格・必須要件・対象となる方・スキルなど">📋 応募要件/MUST 22種</span>
+            <span title="仕事内容・職務内容・業務内容・担当など">💼 仕事内容 12種</span>
+            <span title="福利厚生・諸手当・待遇・社内制度など">🎁 福利厚生 14種</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右ペイン: 抽出結果のプレビュー＆修正フォーム -->
+      <section class="panel panel-preview">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="step-num">2</span>
+            <h2>解析結果の確認・編集</h2>
+          </div>
+          <div class="panel-tools">
+            <button id="btnResetForm" class="btn btn-sm btn-ghost">リセット</button>
+            <button id="btnAddToList" class="btn btn-sm btn-success">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              リストに追加
+            </button>
+          </div>
+        </div>
+
+        <form id="parsedDataForm" class="parsed-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="f_companyName">会社名 / 企業名 <span class="req">*</span></label>
+              <input type="text" id="f_companyName" placeholder="例: 株式会社テクノロジー" required>
+            </div>
+            <div class="form-group">
+              <label for="f_jobTitle">職種・募集ポジション <span class="req">*</span></label>
+              <input type="text" id="f_jobTitle" placeholder="例: フルスタックWebエンジニア" required>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="f_employmentType">雇用形態</label>
+              <input type="text" id="f_employmentType" placeholder="正社員 / 契約社員 / 業務委託...">
+            </div>
+            <div class="form-group">
+              <label for="f_salary">給与・想定年収</label>
+              <input type="text" id="f_salary" placeholder="例: 600万〜900万円 / 月給35万〜">
+            </div>
+            <div class="form-group">
+              <label for="f_location">勤務地・リモート体制</label>
+              <input type="text" id="f_location" placeholder="例: 東京都港区 / 在宅勤務可">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="f_jobDescription">仕事内容 / 業務概要</label>
+            <textarea id="f_jobDescription" rows="3" placeholder="自社SaaSプロダクトの開発・運用..."></textarea>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="f_requirements">応募資格 / 必須要件</label>
+              <textarea id="f_requirements" rows="3" placeholder="・JavaScript/TypeScript 実務3年以上&#10;・Gitを用いたチーム開発経験"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="f_preferred">歓迎要件 / 求める人物像</label>
+              <textarea id="f_preferred" rows="3" placeholder="・AWS/GCPのインフラ設計経験&#10;・アジャイル開発経験"></textarea>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="f_workHours">勤務時間・労働制</label>
+              <input type="text" id="f_workHours" placeholder="例: 9:00〜18:00 (フレックス制)">
+            </div>
+            <div class="form-group">
+              <label for="f_holidays">休日・休暇</label>
+              <input type="text" id="f_holidays" placeholder="例: 完全週休2日制(土日祝) 年休125日">
+            </div>
+            <div class="form-group">
+              <label for="f_selectionProcess">選考フロー</label>
+              <input type="text" id="f_selectionProcess" placeholder="例: 書類選考 → 一次面接 → 最終面接">
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="f_benefits">福利厚生・待遇</label>
+              <textarea id="f_benefits" rows="2" placeholder="社会保険完備、交通費支給、書籍購入補助..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="f_sourceUrl">求人URL / メモ</label>
+              <textarea id="f_sourceUrl" rows="2" placeholder="https://... または社内メモ"></textarea>
+            </div>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <!-- 下部ペイン: 蓄積テーブル ＆ CSV操作エリア -->
+    <section class="table-section">
+      <div class="table-header">
+        <div class="table-title-group">
+          <span class="step-num">3</span>
+          <h2>蓄積リスト (<span id="recordsCount">0</span> 件)</h2>
+          <span class="table-hint">※ローカルに自動保存されます。ブラウザを閉じても消えません。</span>
+        </div>
+        <div class="table-actions">
+          <div class="search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="tableFilterInput" placeholder="会社名・職種・勤務地で絞り込み...">
+          </div>
+          <button id="btnColumnSettings" class="btn btn-sm btn-outline">列カスタマイズ</button>
+          <button id="btnClearAllRecords" class="btn btn-sm btn-outline-danger">すべて削除</button>
+        </div>
+      </div>
+
+      <div class="table-scroll-container">
+        <table class="data-table" id="jobsTable">
+          <thead>
+            <tr>
+              <th width="40">No</th>
+              <th width="140">会社名</th>
+              <th width="150">職種</th>
+              <th width="90">雇用形態</th>
+              <th width="130">給与</th>
+              <th width="130">勤務地</th>
+              <th width="160">必須要件</th>
+              <th width="160">仕事内容</th>
+              <th width="120">休日/休暇</th>
+              <th width="80">操作</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTableBody">
+            <tr class="empty-row">
+              <td colspan="10">
+                <div class="empty-state">
+                  <div class="empty-icon">📂</div>
+                  <div class="empty-text">まだ登録された求人データがありません</div>
+                  <div class="empty-subtext">左上のサンプルボタンをクリックするか、求人テキストを貼り付けて「項目を自動解析」してください。</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- AI設定モーダル -->
+    <div id="aiModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>🤖 無料で使えるAI（Gemini）抽出設定</h3>
+          <button class="modal-close" id="btnCloseAiModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="free-badge-banner">
+            <div class="banner-title">✨ Googleアカウントがあれば誰でも完全無料！</div>
+            <div class="banner-text">
+              Google AI Studioから<strong>クレジットカード登録なし</strong>でAPIキーを即時発行できます。<br>
+              <strong>1日1,500回まで完全無料</strong>で使えるため、求人票の整理なら完全無料でずっと使い続けられます。
+            </div>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="btn btn-sm btn-accent" style="margin-top: 8px; display: inline-flex; text-decoration: none;">
+              🔑 Google AI Studioで無料APIキーを取得する (別タブで開く)
+            </a>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label for="geminiApiKey">Gemini API Key <span class="req">*</span></label>
+            <input type="password" id="geminiApiKey" placeholder="AIzaSy... （取得したキーを貼り付け）">
+            <span class="field-help">※キーはお使いのブラウザ（LocalStorage）にのみ安全に保存され、第三者のサーバーには送信されません。</span>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="geminiModel">モデル</label>
+              <select id="geminiModel">
+                <option value="gemini-3.5-flash-lite" selected>Gemini 3.5 Flash-Lite (最新・最速・高負荷に強い推奨モデル)</option>
+                <option value="gemini-3.8-flash">Gemini 3.8 Flash (高精度・混雑時は自動切替)</option>
+                <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite (軽量バックアップ)</option>
+              </select>
+            </div>
+            <div class="form-group" style="justify-content: flex-end;">
+              <label class="checkbox-label" style="padding-bottom: 8px;">
+                <input type="checkbox" id="aiAutoParseCheck" checked>
+                <span><strong>常にAI優先で解析する</strong></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnTestAi" class="btn btn-outline">接続テスト</button>
+          <button id="btnSaveAiSettings" class="btn btn-primary">保存してAI解析を有効化</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- カラム設定モーダル -->
+    <div id="colModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>📊 CSV出力列・表示項目の選択</h3>
+          <button class="modal-close" id="btnCloseColModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">CSVファイルに出力する項目を選択してください。</p>
+          <div class="column-checkboxes" id="columnCheckboxes">
+            <!-- 動的生成 -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnSelectAllCols" class="btn btn-ghost btn-sm">全選択</button>
+          <button id="btnSaveCols" class="btn btn-primary">適用</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toastContainer" class="toast-container"></div>
+  </div>
+
+  <script src="js/samples.js?v=5"></script>
+  <script src="js/parser.js?v=5"></script>
+  <script src="js/url-fetcher.js?v=5"></script>
+  <script src="js/ai-parser.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
+</body>
+</html>
