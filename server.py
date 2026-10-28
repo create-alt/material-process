@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-求人パースHub ローカルサーバー (CORS回避URL取得プロキシ内蔵)
+研究室リサーチHub ローカルサーバー (CORS回避URL取得プロキシ内蔵)
 Usage: python server.py [port]
 """
 
@@ -13,7 +13,7 @@ import ssl
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 
-class JobHubRequestHandler(SimpleHTTPRequestHandler):
+class LabHubRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == '/api/fetch-url':
@@ -90,8 +90,8 @@ class JobHubRequestHandler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    server = ThreadingHTTPServer(('0.0.0.0', port), JobHubRequestHandler)
-    print(f'Serving Job Parser Hub at http://localhost:{port}')
+    server = ThreadingHTTPServer(('0.0.0.0', port), LabHubRequestHandler)
+    print(f'Serving Lab Research Hub at http://localhost:{port}')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

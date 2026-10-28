@@ -1,9 +1,9 @@
 /**
- * AI求人抽出エンジン (Google Gemini API連携)
- * オプショナル設定: APIキーがある場合、複雑な自由文から高精度にJSON化
+ * AI大学・研究室情報抽出エンジン (Google Gemini API連携)
+ * オプショナル設定: APIキーがある場合、研究室紹介ページや入試要項の自由文から高精度にJSON化
  */
 
-class GeminiJobParser {
+class GeminiLabParser {
   constructor() {
     this.apiKey = localStorage.getItem('gemini_api_key') || '';
     const savedModel = localStorage.getItem('gemini_model');
@@ -79,33 +79,59 @@ class GeminiJobParser {
       throw new Error('Gemini APIキーが設定されていません。AI設定からAPIキーを入力してください。');
     }
 
-    const prompt = `あなたは日本の求人票・採用情報の専門解析AIです。
-以下の求人テキストを読み込み、指定されたJSONスキーマに従って情報を正確に抽出・正規化してください。
+    const prompt = `あなたは日本の大学・大学院（情報系：情報科学・情報工学・コンピュータサイエンス）の研究室調査を支援する専門解析AIです。
+以下のテキスト（研究室紹介ページ・入試要項・募集要項・メモなど）を読み込み、指定されたJSONスキーマに従って情報を正確に抽出・正規化してください。
 
 【抽出ルール】
-- 表現の揺らぎ（「給与」「賃金」「年俸」「月給」「初任給」「諸手当」「想定年収」、「勤務地」「就業場所」「就業エリア」「配属先」、「必須スキル」「応募資格」「対象となる方」「募集学科」など）を適切に解釈し各項目に振り分けてください。
-- 該当する情報がテキストに記載されていない場合は、空文字 "" にしてください。
+- university には大学そのものの情報を入れてください（大学名は正式名称。「大学院」は faculty 側に含めてください）。
+- labs には研究室ごとに1要素を作り、本文に記載がある研究室をすべて列挙してください（「〇〇研究室」「〇〇ラボ」「〇〇Lab」など）。
+- 研究室の特徴（コアタイム、ゼミ頻度、学会発表、共同研究、学生数、外部生の受け入れ、研究室訪問の可否など）は features / achievements / collaboration / members / contact に振り分けてください。
+- admissions には入試情報を区分ごとに入れてください。
+  - transfer: 編入学（高専・短大からの3年次編入など）
+  - graduate: 大学院入試（博士前期/修士・博士後期、一般選抜・推薦・社会人・留学生など）
+  - undergrad: 学部入試（一般選抜・総合型・学校推薦型など）
+  各区分は summary(方式・概要), eligibility(出願資格), subjects(試験科目・選抜方法), english(TOEIC/TOEFL等の英語試験), schedule(出願期間・試験日・合格発表・説明会。日付はできるだけ「2026年8月25日」の形式), quota(募集人員・倍率・志願者数), notes(過去問・事前相談・提出書類などの備考) です。
+- テキストに記載がない項目は空文字 "" にしてください。推測で情報を補わないでください。
 - 項目内に不要な見出し記号（【】や■など）は含めず、内容だけを抽出してください。
 - JSONフォーマットのみを出力してください（プレーンなJSONオブジェクト）。
 
 【JSON出力フォーマット】
 {
-  "companyName": "会社名・企業名",
-  "jobTitle": "募集職種・ポジション名・採用コース",
-  "employmentType": "雇用形態（正社員/契約社員/新卒採用/高専卒採用など）",
-  "salary": "給与・初任給・諸手当・賞与など",
-  "location": "勤務地・就業場所・勤務エリア",
-  "jobDescription": "仕事内容・業務内容の詳細",
-  "requirements": "応募資格・必須要件・募集学科",
-  "preferred": "歓迎要件・歓迎スキル",
-  "workHours": "勤務時間・労働制・交替制など",
-  "holidays": "休日・休暇制度",
-  "benefits": "福利厚生・諸手当・社内制度・寮社宅",
-  "selectionProcess": "選考フロー・選考方法・応募手順",
-  "sourceUrl": "URLまたは空"
+  "university": {
+    "name": "大学名",
+    "faculty": "学部・研究科（例: 大学院情報科学研究科）",
+    "department": "学科・専攻・コース",
+    "type": "国立 / 公立 / 私立 のいずれか（不明なら空）",
+    "location": "所在地・キャンパス",
+    "overview": "大学・研究科の特色",
+    "tuition": "学費・奨学金・経済支援",
+    "career": "進路・就職実績",
+    "url": "参照URL"
+  },
+  "admissions": {
+    "transfer": {"summary": "", "eligibility": "", "subjects": "", "english": "", "schedule": "", "quota": "", "notes": ""},
+    "graduate": {"summary": "", "eligibility": "", "subjects": "", "english": "", "schedule": "", "quota": "", "notes": ""},
+    "undergrad": {"summary": "", "eligibility": "", "subjects": "", "english": "", "schedule": "", "quota": "", "notes": ""}
+  },
+  "labs": [
+    {
+      "name": "研究室名（例: 山田研究室）",
+      "professor": "教員（職位＋氏名、複数可）",
+      "area": "研究分野",
+      "description": "研究内容・研究テーマ",
+      "keywords": "キーワード（カンマ区切り）",
+      "features": "特色・雰囲気（コアタイム、ゼミ、指導方針など）",
+      "achievements": "主な業績・学会発表・受賞",
+      "collaboration": "共同研究・企業連携",
+      "members": "メンバー構成・学生数",
+      "career": "修了生の進路",
+      "contact": "研究室訪問・連絡先",
+      "url": "研究室URL"
+    }
+  ]
 }
 
-【対象求人テキスト】
+【対象テキスト】
 ${rawText}
 `;
 
@@ -127,7 +153,8 @@ ${rawText}
     const tryModel = async (modelName) => {
       triedModels.add(modelName);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      // 研究室が多いページは出力が長くなるため長めに待つ
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
@@ -245,4 +272,4 @@ ${rawText}
   }
 }
 
-window.geminiJobParser = new GeminiJobParser();
+window.geminiLabParser = new GeminiLabParser();

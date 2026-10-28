@@ -1,35 +1,43 @@
 /**
- * 募集要項URL取得＆構造化テキスト変換エンジン
+ * 大学・研究室ページURL取得＆構造化テキスト変換エンジン
  * ローカルサーバープロキシ -> Jina Reader -> 公開CORSプロキシ のマルチフォールバック構成
  */
 
-class JobUrlFetcher {
+class PageUrlFetcher {
   constructor() {
-    // ドメインから正式社名を補完する辞書（表記揺れ・略称対策）
-    this.domainCompanyMap = {
-      'mhi.com': '三菱重工業株式会社（三菱重工）',
-      'westjr.co.jp': '西日本旅客鉄道株式会社（JR西日本）',
-      'jreast.co.jp': '東日本旅客鉄道株式会社（JR東日本）',
-      'jr-central.co.jp': '東海旅客鉄道株式会社（JR東海）',
-      'hitachi.co.jp': '株式会社日立製作所',
-      'toshiba.co.jp': '株式会社東芝',
-      'mitsubishielectric.co.jp': '三菱電機株式会社',
-      'kawasaki.co.jp': '川崎重工業株式会社',
-      'ihi.co.jp': '株式会社IHI',
-      'sony.co.jp': 'ソニーグループ株式会社',
-      'panasonic.com': 'パナソニック ホールディングス株式会社',
-      'toyota.co.jp': 'トヨタ自動車株式会社',
-      'honda.co.jp': '本田技研工業株式会社',
-      'ntt.com': 'NTTコミュニケーションズ株式会社'
+    // ドメインから正式な大学名を補完する辞書（略称・英語ドメイン対策）
+    this.domainUniversityMap = {
+      'u-tokyo.ac.jp': '東京大学',
+      'kyoto-u.ac.jp': '京都大学',
+      'osaka-u.ac.jp': '大阪大学',
+      'tohoku.ac.jp': '東北大学',
+      'nagoya-u.ac.jp': '名古屋大学',
+      'kyushu-u.ac.jp': '九州大学',
+      'hokudai.ac.jp': '北海道大学',
+      'isct.ac.jp': '東京科学大学',
+      'titech.ac.jp': '東京科学大学（旧 東京工業大学）',
+      'tsukuba.ac.jp': '筑波大学',
+      'kobe-u.ac.jp': '神戸大学',
+      'hiroshima-u.ac.jp': '広島大学',
+      'naist.jp': '奈良先端科学技術大学院大学',
+      'jaist.ac.jp': '北陸先端科学技術大学院大学',
+      'uec.ac.jp': '電気通信大学',
+      'kyutech.ac.jp': '九州工業大学',
+      'nitech.ac.jp': '名古屋工業大学',
+      'tut.ac.jp': '豊橋技術科学大学',
+      'nagaokaut.ac.jp': '長岡技術科学大学',
+      'u-aizu.ac.jp': '会津大学',
+      'keio.ac.jp': '慶應義塾大学',
+      'waseda.jp': '早稲田大学'
     };
   }
 
   /**
-   * 指定URLから求人・募集要項テキストを取得して整形する
+   * 指定URLから研究室紹介・入試要項ページのテキストを取得して整形する
    * @param {string} rawUrl
    * @returns {Promise<{ text: string, finalUrl: string, source: string }>}
    */
-  async fetchJobPage(rawUrl) {
+  async fetchPage(rawUrl) {
     const url = (rawUrl || '').trim();
     if (!url || !/^https?:\/\//i.test(url)) {
       throw new Error('有効なURL（http:// または https://）を入力してください。');
@@ -48,7 +56,7 @@ class JobUrlFetcher {
         if (res.ok) {
           const data = await res.json();
           if (data && data.html) {
-            const extracted = this.extractJobTextFromHtml(data.html, data.url || url);
+            const extracted = this.extractTextFromHtml(data.html, data.url || url);
             if (extracted.length >= 40) {
               return { text: extracted, finalUrl: data.url || url, source: 'local-proxy' };
             }
@@ -74,7 +82,7 @@ class JobUrlFetcher {
       );
       if (res.ok) {
         const mdText = await res.text();
-        const cleaned = this.cleanMarkdownToJobText(mdText, url);
+        const cleaned = this.cleanMarkdownToText(mdText, url);
         if (cleaned.length >= 40) {
           return { text: cleaned, finalUrl: url, source: 'jina-reader' };
         }
@@ -90,7 +98,7 @@ class JobUrlFetcher {
       if (res.ok) {
         const data = await res.json();
         if (data && data.contents) {
-          const extracted = this.extractJobTextFromHtml(data.contents, url);
+          const extracted = this.extractTextFromHtml(data.contents, url);
           if (extracted.length >= 40) {
             return { text: extracted, finalUrl: url, source: 'allorigins' };
           }
@@ -106,7 +114,7 @@ class JobUrlFetcher {
       const res = await this.fetchWithTimeout(proxyUrl, {}, 12000);
       if (res.ok) {
         const html = await res.text();
-        const extracted = this.extractJobTextFromHtml(html, url);
+        const extracted = this.extractTextFromHtml(html, url);
         if (extracted.length >= 40) {
           return { text: extracted, finalUrl: url, source: 'codetabs' };
         }
@@ -117,7 +125,7 @@ class JobUrlFetcher {
 
     throw new Error(
       lastError?.message ||
-      '募集要項ページの取得に失敗しました。アクセス制限があるページの場合はテキストを直接コピー＆ペーストしてください。'
+      'ページの取得に失敗しました。アクセス制限があるページの場合はテキストを直接コピー＆ペーストしてください。'
     );
   }
 
@@ -138,15 +146,15 @@ class JobUrlFetcher {
   }
 
   /**
-   * ドメインやページタイトルから企業名・採用種別を推定
+   * ドメインやページタイトルから大学名を推定
    */
   inferMetadata(titleStr, ogSiteName, url) {
-    let company = ogSiteName || '';
+    let university = '';
     try {
       const host = new URL(url).hostname.replace(/^www\./, '');
-      for (const [domain, name] of Object.entries(this.domainCompanyMap)) {
+      for (const [domain, name] of Object.entries(this.domainUniversityMap)) {
         if (host === domain || host.endsWith('.' + domain)) {
-          company = name;
+          university = name;
           break;
         }
       }
@@ -154,34 +162,24 @@ class JobUrlFetcher {
       // ignore URL parse error
     }
 
-    if (!company && titleStr) {
-      // 「募集要項 | 高専生採用 | 三菱重工」のように区切られている場合の末尾または先頭から企業名を推定
-      const parts = titleStr.split(/[|｜\-－―—:：]/).map(s => s.trim()).filter(Boolean);
-      const corpPart = parts.find(p => /(?:株式会社|工業|製作所|重工|電機|鉄道|グループ|ホールディングス)/.test(p));
-      if (corpPart) {
-        company = corpPart;
-      } else if (parts.length >= 2) {
-        company = parts[parts.length - 1];
+    if (!university) {
+      // 「研究室一覧 | 情報科学研究科 | 〇〇大学」のように区切られたタイトルから大学名を探す
+      const parts = [ogSiteName, ...(titleStr || '').split(/[|｜\-－―—:：]/)]
+        .map(s => (s || '').trim())
+        .filter(Boolean);
+      const uniPart = parts.find(p => /(大学院大学|大学)$/.test(p)) || parts.find(p => /大学/.test(p));
+      if (uniPart) {
+        const m = uniPart.match(/[^\s　]*?(?:大学院大学|大学)(?!院)/);
+        university = m ? m[0] : uniPart;
       }
     }
-
-    let employmentType = '';
-    const combined = `${titleStr} ${url}`;
-    if (/kosen|高専/i.test(combined)) {
-      employmentType = '正社員（高専卒採用）';
-    } else if (/newgrad|新卒/i.test(combined)) {
-      employmentType = '正社員（新卒採用）';
-    } else if (/career|中途|キャリア採用/i.test(combined)) {
-      employmentType = '正社員（キャリア採用）';
-    }
-
-    return { company, employmentType };
+    return { university };
   }
 
   /**
-   * HTML文字列から募集要項のテーブル・見出し・JSON-LDを解析しやすいテキストに変換
+   * HTML文字列から研究室紹介・入試要項のテーブル・見出しを解析しやすいテキストに変換
    */
-  extractJobTextFromHtml(html, url) {
+  extractTextFromHtml(html, url) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     const lines = [];
@@ -192,33 +190,29 @@ class JobUrlFetcher {
     const ogTitle = (doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || '').trim();
     const fullTitle = ogTitle || pageTitle;
 
-    const meta = this.inferMetadata(fullTitle, ogSiteName, url);
-    if (meta.company) {
-      lines.push(`【会社名】\n${meta.company}`);
-    }
-    if (meta.employmentType) {
-      lines.push(`【雇用形態】\n${meta.employmentType}`);
-    }
-    if (fullTitle) {
-      lines.push(`【求人タイトル】\n${fullTitle}`);
-    }
-    lines.push(`【求人URL】\n${url}\n`);
-
-    // 2. JSON-LD (Schema.org JobPosting) が埋め込まれていれば優先抽出
-    const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
-    jsonLdScripts.forEach(script => {
+    // 2. JSON-LD (Schema.org CollegeOrUniversity 等) に大学名があれば優先
+    let schemaName = '';
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
       try {
         const raw = JSON.parse(script.textContent);
         const items = Array.isArray(raw) ? raw : (raw['@graph'] ? raw['@graph'] : [raw]);
         items.forEach(item => {
-          if (item && (item['@type'] === 'JobPosting' || (Array.isArray(item['@type']) && item['@type'].includes('JobPosting')))) {
-            lines.push(this.formatJobPostingSchema(item));
+          const types = [].concat(item?.['@type'] || []);
+          if (!schemaName && types.some(t => /CollegeOrUniversity|EducationalOrganization/.test(t)) && item.name) {
+            schemaName = String(item.name);
           }
         });
       } catch {
         // ignore invalid JSON-LD
       }
     });
+
+    const meta = this.inferMetadata(fullTitle, ogSiteName, url);
+    const university = schemaName || meta.university;
+    if (university) lines.push(`【大学名】\n${university}`);
+    if (fullTitle) lines.push(`【ページタイトル】\n${fullTitle}`);
+    lines.push(`【URL】\n${url}`);
+    lines.push('【ページ本文】\n');
 
     // 3. 不要なノイズ要素を除去
     const removeSelectors = [
@@ -302,71 +296,9 @@ class JobUrlFetcher {
   }
 
   /**
-   * Schema.org JobPosting オブジェクトを【見出し】付きテキストに変換
-   */
-  formatJobPostingSchema(job) {
-    const out = [];
-    const stripHtml = (str) => {
-      if (!str) return '';
-      const tmp = new DOMParser().parseFromString(String(str), 'text/html');
-      return (tmp.body?.textContent || '').trim();
-    };
-
-    if (job.hiringOrganization?.name) {
-      out.push(`【会社名】\n${job.hiringOrganization.name}`);
-    }
-    if (job.title) {
-      out.push(`【募集職種】\n${job.title}`);
-    }
-    if (job.employmentType) {
-      const emp = Array.isArray(job.employmentType) ? job.employmentType.join(' / ') : job.employmentType;
-      out.push(`【雇用形態】\n${emp}`);
-    }
-    if (job.baseSalary) {
-      const val = job.baseSalary.value;
-      const currency = job.baseSalary.currency || 'JPY';
-      if (val) {
-        const min = val.minValue || val.value || '';
-        const max = val.maxValue ? `〜${val.maxValue}` : '';
-        const unit = val.unitText || '';
-        out.push(`【給与】\n${min}${max} ${currency} ${unit}`.trim());
-      }
-    }
-    if (job.jobLocation) {
-      const locs = Array.isArray(job.jobLocation) ? job.jobLocation : [job.jobLocation];
-      const addrStrs = locs.map(l => {
-        const a = l?.address;
-        if (!a) return '';
-        if (typeof a === 'string') return a;
-        return [a.addressRegion, a.addressLocality, a.streetAddress].filter(Boolean).join(' ');
-      }).filter(Boolean);
-      if (addrStrs.length) {
-        out.push(`【勤務地】\n${addrStrs.join(' / ')}`);
-      }
-    }
-    if (job.description) {
-      out.push(`【仕事内容】\n${stripHtml(job.description)}`);
-    }
-    if (job.qualifications || job.skills || job.experienceRequirements) {
-      const reqs = [job.qualifications, job.skills, job.experienceRequirements]
-        .map(stripHtml)
-        .filter(Boolean)
-        .join('\n');
-      if (reqs) out.push(`【応募資格】\n${reqs}`);
-    }
-    if (job.workHours) {
-      out.push(`【勤務時間】\n${stripHtml(job.workHours)}`);
-    }
-    if (job.jobBenefits) {
-      out.push(`【福利厚生】\n${stripHtml(job.jobBenefits)}`);
-    }
-    return out.join('\n\n');
-  }
-
-  /**
    * Jina Reader等のMarkdownテキストをパーサー向けに整形
    */
-  cleanMarkdownToJobText(md, url) {
+  cleanMarkdownToText(md, url) {
     let title = '';
     const titleMatch = md.match(/^Title:\s*(.+)$/m);
     if (titleMatch) {
@@ -388,7 +320,7 @@ class JobUrlFetcher {
       .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
       // Markdownテーブル行 | 項目 | 内容 | -> 【項目】\n内容
       .replace(/^\|\s*([^|]{1,30}?)\s*\|\s*([^|]+?)\s*\|$/gm, (m, k, v) => {
-        if (/^[-:\s]+$/.test(k) || /^[-:\s]+$/.test(v)) return '';
+        if (/^[-:\s]+$/.test(k) || /^[-:\s]+$/.test(v) || /^(項目|見出し)$/.test(k.trim())) return '';
         return `\n【${k.trim()}】\n${v.trim()}`;
       })
       // Markdown見出し ### Heading -> 【Heading】
@@ -400,10 +332,10 @@ class JobUrlFetcher {
 
     const meta = this.inferMetadata(title, '', url);
     const headerLines = [];
-    if (meta.company) headerLines.push(`【会社名】\n${meta.company}`);
-    if (meta.employmentType) headerLines.push(`【雇用形態】\n${meta.employmentType}`);
-    if (title) headerLines.push(`【求人タイトル】\n${title}`);
-    headerLines.push(`【求人URL】\n${url}`);
+    if (meta.university) headerLines.push(`【大学名】\n${meta.university}`);
+    if (title) headerLines.push(`【ページタイトル】\n${title}`);
+    headerLines.push(`【URL】\n${url}`);
+    headerLines.push('【ページ本文】');
 
     return `${headerLines.join('\n')}\n\n${content}`;
   }
@@ -428,4 +360,4 @@ class JobUrlFetcher {
   }
 }
 
-window.jobUrlFetcher = new JobUrlFetcher();
+window.pageUrlFetcher = new PageUrlFetcher();
