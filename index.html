@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
   <div class="app-layout">
@@ -443,27 +443,36 @@
               <span><strong>使わない</strong><br><small>ルール（ヒューリスティック）のみで抽出</small></span>
             </label>
             <label class="slm-backend">
-              <input type="radio" name="slmBackend" value="webllm">
-              <span><strong>ブラウザ内で実行</strong><br><small>WebLLM / WebGPU。インストール不要（初回のみモデルをダウンロード）</small></span>
+              <input type="radio" name="slmBackend" value="browser">
+              <span><strong>ブラウザ内で実行</strong><br><small>インストール不要。GPU(WebGPU)が使えればGPU、無ければCPUで自動実行（初回のみモデルをダウンロード）</small></span>
             </label>
             <label class="slm-backend">
               <input type="radio" name="slmBackend" value="server">
-              <span><strong>ローカルLLMサーバー</strong><br><small>Ollama・LM Studio・llama.cpp など（高速・大きめのモデルも可）</small></span>
+              <span><strong>ローカルLLMサーバー</strong><br><small>Ollama・LM Studio・llama.cpp など。GPUが無くてもCPUで高速に動作</small></span>
             </label>
           </div>
 
-          <div id="slmWebllmSection" class="slm-section">
-            <div class="form-row-2">
+          <div id="slmBrowserSection" class="slm-section">
+            <div class="form-row-3">
               <div class="form-group">
-                <label for="slmWebllmModel">モデル</label>
+                <label for="slmBrowserEngine">実行エンジン</label>
+                <select id="slmBrowserEngine">
+                  <option value="auto">自動（GPUが使えればGPU、無ければCPU）</option>
+                  <option value="webgpu">GPU優先（使えない場合はCPU）</option>
+                  <option value="cpu">常にCPU（WebAssembly）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="slmWebllmModel">GPU用モデル（WebLLM）</label>
                 <select id="slmWebllmModel"></select>
               </div>
               <div class="form-group">
-                <label>WebGPU</label>
-                <div id="slmWebGpuStatus" class="slm-gpu-status"></div>
+                <label for="slmCpuModel">CPU用モデル（Transformers.js）</label>
+                <select id="slmCpuModel"></select>
               </div>
             </div>
-            <span class="field-help">モデルはHugging Faceから初回のみダウンロードされ、ブラウザ内にキャッシュされます（数百MB〜数GB）。</span>
+            <div id="slmEnvStatus" class="slm-gpu-status"></div>
+            <span class="field-help">モデルはHugging Faceから初回のみダウンロードされ、ブラウザ内にキャッシュされます（CPU用は約0.5〜1.5GB、GPU用は約1〜4GB）。CPU実行はGPUより遅いため、1ページあたりの判定量を自動で絞ります。</span>
           </div>
 
           <div id="slmServerSection" class="slm-section">
@@ -582,14 +591,14 @@
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="js/samples.js?v=11"></script>
-  <script src="js/insights.js?v=11"></script>
-  <script src="js/parser.js?v=11"></script>
-  <script src="js/url-fetcher.js?v=11"></script>
-  <script src="js/slm.js?v=11"></script>
-  <script src="js/lab-extractor.js?v=11"></script>
-  <script src="js/crawler.js?v=11"></script>
-  <script src="js/ai-parser.js?v=11"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="js/samples.js?v=12"></script>
+  <script src="js/insights.js?v=12"></script>
+  <script src="js/parser.js?v=12"></script>
+  <script src="js/url-fetcher.js?v=12"></script>
+  <script src="js/slm.js?v=12"></script>
+  <script src="js/lab-extractor.js?v=12"></script>
+  <script src="js/crawler.js?v=12"></script>
+  <script src="js/ai-parser.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
 </body>
 </html>

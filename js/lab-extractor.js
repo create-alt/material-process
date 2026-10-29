@@ -502,6 +502,10 @@ class LabExtractor {
    * @returns {Promise<Array<{line: number, name: string, professor: string, field: string, topic: string}>>}
    */
   async refineWithSlm(lines, slm, meta = {}, onProgress = () => {}) {
+    // CPU実行などの遅いエンジンでは1回の入力を小さくし、1ページあたりの呼び出し回数も絞る
+    if (slm.ensureReady) await slm.ensureReady();
+    const profile = slm.profile ? slm.profile() : { chunkChars: 1400, maxChunksPerPage: 12 };
+    const maxChunks = meta.maxChunks || profile.maxChunksPerPage;
     const usable = lines
       .map((l, i) => ({ i, l }))
       .filter(({ l }) => l.text.length >= 2 && !(this.navRe.test(l.text) && l.text.length < 20));
@@ -513,7 +517,7 @@ class LabExtractor {
     let size = 0;
     for (const item of usable) {
       const rendered = this.renderLineForSlm(item.i, item.l);
-      if (size + rendered.length > 1400 && current.length) {
+      if (size + rendered.length > profile.chunkChars && current.length) {
         chunks.push(current);
         current = [];
         size = 0;
@@ -522,6 +526,19 @@ class LabExtractor {
       size += rendered.length;
     }
     if (current.length) chunks.push(current);
+
+    // 上限を超える場合は、研究室・教員らしい行や研究室系の見出しが多い範囲を優先して判定
+    if (chunks.length > maxChunks) {
+      const weight = (chunk) => chunk.reduce((sum, { l }) => {
+        const f = this.lineFeatures(l);
+        return sum + (f ? 2 : 0) + (l.kind === 'heading' && this.labSectionRe.test(l.text) ? 1 : 0) + (/研究室|ラボ|Lab\b/.test(l.text) ? 1 : 0);
+      }, 0);
+      const keep = new Set(chunks.map((chunk, idx) => ({ idx, w: weight(chunk) }))
+        .sort((a, b) => b.w - a.w || a.idx - b.idx)
+        .slice(0, maxChunks)
+        .map(x => x.idx));
+      chunks.splice(0, chunks.length, ...chunks.filter((_, idx) => keep.has(idx)));
+    }
 
     const schema = {
       type: 'object',
@@ -721,14 +738,14 @@ ${chunk.map(x => x.rendered).join('\n')}`;
   /**
    * テキスト／ページから研究室を抽出する一括処理
    */
-  async extract(lines, { slm = null, title = '', pageUrl = '', onProgress } = {}) {
+  async extract(lines, { slm = null, title = '', pageUrl = '', maxChunks = 0, onProgress } = {}) {
     const candidates = this.scoreLines(lines);
     let slmLabs = [];
     let slmError = null;
     const useSlm = !!(slm && slm.isEnabled());
     if (useSlm) {
       try {
-        slmLabs = await this.refineWithSlm(lines, slm, { title }, onProgress);
+        slmLabs = await this.refineWithSlm(lines, slm, { title, maxChunks }, onProgress);
       } catch (e) {
         slmError = e;
       }
@@ -818,7 +835,7 @@ ${chunk.map(x => x.rendered).join('\n')}`;
    * @returns {Promise<Set<string>>} 選ばれたURL
    */
   async rankLinksWithSlm(links, slm, meta = {}) {
-    const list = links.slice(0, 60);
+    const list = links.slice(0, slm.profile ? slm.profile().maxLinks : 60);
     if (list.length === 0) return new Set();
     let path = '';
     const rendered = list.map((l, i) => {

@@ -316,12 +316,16 @@ document.addEventListener('DOMContentLoaded', () => {
           btnParseText.innerHTML = `<span>SLMを準備中 ${Math.round(p * 100)}%</span>`;
           if (msg) btnParseText.title = msg;
         });
+        announceSlmEngine();
       }
+      const slow = useSlm && slm.profile().slow;
       found = await extractor.extract(lines, {
         slm: useSlm ? slm : null,
         title: result.university.name,
+        // 貼り付けテキストはCPU実行でも多めに判定する（クロール時は1ページ4回まで）
+        maxChunks: slow ? 8 : 0,
         onProgress: (done, total) => {
-          btnParseText.innerHTML = `<span>ローカルSLMで研究室を判定中 (${done}/${total})</span>`;
+          btnParseText.innerHTML = `<span>ローカルSLM${slow ? '(CPU)' : ''}で研究室を判定中 (${done}/${total})</span>`;
         }
       });
     } catch (e) {
@@ -1775,10 +1779,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // 11. ローカルSLM設定
   // =========================================================
 
+  // ブラウザ内SLMを読み込んだとき、GPU/CPUのどちらで動いているかを一度だけ知らせる
+  let announcedEngine = '';
+  function announceSlmEngine() {
+    updateSlmBadge();
+    if (slm.config.backend !== 'browser' || !slm.activeEngine) return;
+    const key = `${slm.activeEngine}:${slm.modelLabel()}`;
+    if (announcedEngine === key) return;
+    announcedEngine = key;
+    showToast(`ローカルSLM: ${slm.engineNote || slm.describe()}（${slm.modelLabel()}）`, 'info');
+  }
+
   function updateSlmBadge() {
     const badge = $('slmStatusBadge');
     const backend = slm.config.backend;
-    badge.textContent = backend === 'webllm' ? 'ブラウザ' : backend === 'server' ? 'サーバー' : 'OFF';
+    badge.textContent = backend === 'browser'
+      ? (slm.activeEngine === 'cpu' ? 'ブラウザ(CPU)' : slm.activeEngine === 'webgpu' ? 'ブラウザ(GPU)' : 'ブラウザ')
+      : backend === 'server' ? 'サーバー' : 'OFF';
     badge.className = slm.isEnabled() ? 'ai-status-on' : 'ai-status-off';
     $('btnSlmSettings').title = `ローカルSLM: ${slm.describe()}`;
   }
@@ -1789,14 +1806,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function toggleSlmSections() {
     const backend = selectedSlmBackend();
-    $('slmWebllmSection').classList.toggle('hidden', backend !== 'webllm');
+    $('slmBrowserSection').classList.toggle('hidden', backend !== 'browser');
     $('slmServerSection').classList.toggle('hidden', backend !== 'server');
   }
 
   function readSlmForm() {
     return {
       backend: selectedSlmBackend(),
+      browserEngine: $('slmBrowserEngine').value,
       webllmModel: $('slmWebllmModel').value,
+      cpuModel: $('slmCpuModel').value,
       serverFlavor: $('slmServerFlavor').value,
       serverUrl: $('slmServerUrl').value.trim() || 'http://127.0.0.1:11434',
       serverModel: $('slmServerModel').value.trim()
@@ -1814,19 +1833,42 @@ document.addEventListener('DOMContentLoaded', () => {
     $('slmWebllmModel').innerHTML = slm.webllmModels
       .map(m => `<option value="${m.id}"${m.id === c.webllmModel ? ' selected' : ''}>${escapeHtml(m.label)}</option>`)
       .join('');
-    $('slmWebGpuStatus').innerHTML = slm.hasWebGpu()
-      ? '<span class="gpu-ok">✅ このブラウザはWebGPUに対応しています</span>'
-      : '<span class="gpu-ng">⚠️ WebGPU非対応です。最新のChrome/Edgeを使うか「ローカルLLMサーバー」を選んでください</span>';
+    $('slmCpuModel').innerHTML = slm.cpuModels
+      .map(m => `<option value="${m.id}"${m.id === c.cpuModel ? ' selected' : ''}>${escapeHtml(m.label)}</option>`)
+      .join('');
+    $('slmBrowserEngine').value = c.browserEngine || 'auto';
+    renderSlmEnvStatus();
     $('slmServerFlavor').value = c.serverFlavor;
     $('slmServerUrl').value = c.serverUrl;
     $('slmServerModel').value = c.serverModel;
     $('slmServerModelList').innerHTML = slm.serverModelHints.map(m => `<option value="${m}">`).join('');
-    setSlmProgress(slm.isLoaded() && slm.isEnabled() ? 1 : 0, slm.isEnabled() ? `現在: ${slm.describe()}${c.backend === 'webllm' && !slm.isLoaded() ? '（未読み込み）' : ''}` : '');
+    setSlmProgress(slm.isLoaded() && slm.isEnabled() ? 1 : 0, slm.isEnabled() ? `現在: ${slm.describe()}${c.backend === 'browser' && !slm.isLoaded() ? '（未読み込み）' : ''}` : '');
     toggleSlmSections();
     openModal('slmModal');
   });
 
   document.querySelectorAll('input[name="slmBackend"]').forEach(r => r.addEventListener('change', toggleSlmSections));
+
+  /**
+   * この環境でのブラウザ内実行の可否（WebGPU / CPUのマルチスレッド）を表示
+   */
+  async function renderSlmEnvStatus() {
+    const el = $('slmEnvStatus');
+    el.innerHTML = '<span class="text-dim">実行環境を確認中...</span>';
+    const adapter = slm.hasWebGpu() ? await navigator.gpu.requestAdapter().catch(() => null) : null;
+    const threads = window.crossOriginIsolated ? Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 2) - 1)) : 1;
+    const gpu = adapter
+      ? '<span class="gpu-ok">✅ GPU（WebGPU）: 利用できます</span>'
+      : '<span class="gpu-ng">➖ GPU（WebGPU）: 利用できません → CPUで実行します</span>';
+    const cpu = threads > 1
+      ? `<span class="gpu-ok">✅ CPU（WebAssembly）: ${threads}スレッドで実行できます</span>`
+      : `<span class="gpu-ng">✅ CPU（WebAssembly）: 1スレッドで実行（<code>python server.py</code> で開くと複数スレッドで高速化）</span>`;
+    const engine = $('slmBrowserEngine').value;
+    const willUse = engine === 'cpu' || !adapter ? 'CPU' : 'GPU';
+    el.innerHTML = `${gpu}<br>${cpu}<br><strong>→ この設定では「${willUse}」で実行します</strong>`;
+  }
+
+  $('slmBrowserEngine').addEventListener('change', renderSlmEnvStatus);
 
   $('slmServerFlavor').addEventListener('change', () => {
     const url = $('slmServerUrl');
@@ -1866,8 +1908,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       setSlmProgress(0, '準備中...');
       const { result, ms } = await slm.test((p, text) => setSlmProgress(p, text));
-      setSlmProgress(1, `✅ 動作OK（${(ms / 1000).toFixed(1)}秒）: ${JSON.stringify(result)}`);
-      showToast('ローカルSLMの動作を確認しました', 'success');
+      updateSlmBadge();
+      setSlmProgress(1, `✅ 動作OK — ${slm.describe()}（応答 ${(ms / 1000).toFixed(1)}秒）: ${JSON.stringify(result)}${slm.engineNote && slm.config.backend === 'browser' ? ` ／ ${slm.engineNote}` : ''}`);
+      showToast(`ローカルSLMの動作を確認しました（${slm.describe()}）`, 'success');
     } catch (e) {
       setSlmProgress(0, `❌ ${e.message}`);
       showToast(e.message, 'warning');
@@ -1951,10 +1994,17 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (useSlm && !slm.isLoaded()) {
         $('crawlStatus').textContent = 'ローカルSLMを準備しています...';
-        await slm.ensureReady((p, text) => {
-          $('crawlProgressFill').style.width = `${Math.round(p * 100)}%`;
-          $('crawlStatus').textContent = `SLM準備中: ${text}`;
-        });
+        try {
+          await slm.ensureReady((p, text) => {
+            $('crawlProgressFill').style.width = `${Math.round(p * 100)}%`;
+            $('crawlStatus').textContent = `SLM準備中: ${text}`;
+          });
+          announceSlmEngine();
+        } catch (e) {
+          // SLMを用意できなくても探索自体はルールのみで続行する
+          opts.slm = null;
+          showToast(`ローカルSLMを準備できなかったため、ルールのみで探索します: ${e.message}`, 'warning');
+        }
       }
 
       const result = await window.siteCrawler.crawl(url, opts, {
@@ -1963,7 +2013,7 @@ document.addEventListener('DOMContentLoaded', () => {
         onProgress: (st) => {
           let ratio = st.visited / st.maxPages;
           let text = `${st.visited}/${st.maxPages}ページ・研究室候補 ${st.labs}件・待機中リンク ${st.queued}件`;
-          if (st.phase === 'slm') text = `ローカルSLMで判定中 (${st.slmDone}/${st.slmTotal}) — ${shortUrl(st.current)}`;
+          if (st.phase === 'slm') text = `ローカルSLM${slm.profile().slow ? '(CPU)' : ''}で判定中 (${st.slmDone}/${st.slmTotal}) — ${shortUrl(st.current)}`;
           else if (st.phase === 'details') {
             ratio = (st.detailDone + 1) / st.detailTotal;
             text = `研究室ページの概要を取得中 (${st.detailDone + 1}/${st.detailTotal}) — ${shortUrl(st.current)}`;

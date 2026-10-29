@@ -82,10 +82,21 @@ python server.py 8000
 
 | 方式 | 特徴 | 準備 |
 | --- | --- | --- |
-| ブラウザ内で実行（WebLLM） | インストール不要。WebGPU対応ブラウザ（最新のChrome/Edge）で動作。初回のみモデルをダウンロードしブラウザにキャッシュ | 不要（推奨モデル: Qwen3.5 2B ／ 軽量: Qwen3.5 0.8B ／ 日本語特化: Gemma 2 2B JPN） |
+| ブラウザ内で実行 | インストール不要。**GPU（WebGPU）が使えればGPU、使えなければCPU（WebAssembly）で自動的に実行**します。初回のみモデルをダウンロードしブラウザにキャッシュ | 不要 |
 | ローカルLLMサーバー | Ollama / LM Studio / llama.cpp など。GPUがなくてもCPUで動作し、大きめのモデルも使える | 例: [Ollama](https://ollama.com) をインストールし `ollama pull qwen2.5:3b` |
 
-「モデルを準備してテスト」で動作確認できます。SLMの判定には1ページあたり数秒〜数十秒かかるため、最大ページ数は20〜30程度から始めるのがおすすめです。
+ブラウザ内実行のエンジンは「自動 / GPU優先 / 常にCPU」から選べます。
+
+| エンジン | ライブラリ | 推奨モデル | 備考 |
+| --- | --- | --- | --- |
+| GPU | WebLLM（WebGPU） | Qwen3.5 2B ／ 軽量: Qwen3.5 0.8B ／ 日本語特化: Gemma 2 2B JPN | 高速。WebGPU対応の最新Chrome/Edgeが必要 |
+| CPU | Transformers.js（ONNX Runtime Web / WebAssembly） | Qwen3 0.6B ／ 最軽量: Qwen2.5 0.5B ／ 日本語◎: Gemma 3 1B | GPU不要。Web Workerで動かすため画面は固まりません |
+
+- GPUが検出されても初期化に失敗した場合（ドライバ・VRAM不足など）は、自動でCPU実行に切り替わります。
+- CPU実行は `python server.py` で開くと **複数スレッド** で動作し高速になります（cross-origin isolation用のCOOP/COEPヘッダーを付与しているため）。`index.html` を直接開いた場合は1スレッドです。
+- CPU実行はGPUより遅いため、1回に読ませる量を小さくし、サイト自動探索では1ページあたりの判定回数を最大4回に絞ります（ルールによる抽出は全体に適用されます）。また出力形式を制約できないため、回答の書き出し（JSONの先頭）を固定し、途中で切れた出力も完結した要素までを復元して使います。
+
+「モデルを準備してテスト」で動作確認できます（実際に使われるのがGPUかCPUかも表示されます）。SLMの判定には1ページあたり数秒〜数十秒（CPUではさらに長く）かかるため、最大ページ数は20〜30程度から始めるのがおすすめです。
 
 ---
 
@@ -112,7 +123,8 @@ python server.py 8000
 - `js/parser.js` : 大学・研究室・入試情報の揺らぎ吸収パーサー（日程抽出を含む）
 - `js/lab-extractor.js` : ページの行構造化・研究室候補のスコアリング・SLMによる文脈判定と検証・リンク評価
 - `js/crawler.js` : サイト自動探索（優先度付き探索・robots.txt・研究室ページ補完・入試情報の統合）
-- `js/slm.js` : ローカルSLM連携（WebLLM / Ollama / OpenAI互換サーバー）
+- `js/slm.js` : ローカルSLM連携（ブラウザ内GPU: WebLLM / ブラウザ内CPU: Transformers.js / Ollama / OpenAI互換サーバー）
+- `js/slm-worker.js` : ブラウザ内CPU実行用のWeb Worker（Transformers.js + WebAssembly）
 - `js/insights.js` : 研究分野辞書・特徴抽出・興味マッチ度・訪問チェックリスト
 - `js/url-fetcher.js` : URL取得とHTML/Markdownの構造化テキスト変換
 - `js/ai-parser.js` : Gemini API連携モジュール（オプション）

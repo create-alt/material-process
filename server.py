@@ -3,6 +3,7 @@
 研究室リサーチHub ローカルサーバー
   - /api/fetch-url : CORS回避のページ取得プロキシ（サイト自動探索で使用）
   - /api/slm       : PC上のローカルLLMサーバー（Ollama / LM Studio / llama.cpp）への中継
+  - COOP/COEP ヘッダー: ブラウザ内SLMのCPU実行(WebAssembly)をマルチスレッド化
 Usage: python server.py [port]
 """
 
@@ -20,6 +21,13 @@ SLM_ALLOWED_PATHS = ('/api/chat', '/api/tags', '/v1/chat/completions', '/v1/mode
 
 
 class LabHubRequestHandler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # cross-origin isolation を有効にし、ブラウザ内SLM(CPU/WebAssembly)を複数スレッドで動かせるようにする
+        # credentialless は外部の公開リソース（Webフォント・CDN）を資格情報なしで読み込めるモード
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy', 'credentialless')
+        super().end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == '/api/fetch-url':
