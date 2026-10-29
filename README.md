@@ -124,7 +124,7 @@ python server.py 8000
 - `js/lab-extractor.js` : ページの行構造化・研究室候補のスコアリング・SLMによる文脈判定と検証・リンク評価
 - `js/crawler.js` : サイト自動探索（優先度付き探索・robots.txt・研究室ページ補完・入試情報の統合）
 - `js/slm.js` : ローカルSLM連携（ブラウザ内GPU: WebLLM / ブラウザ内CPU: Transformers.js / Ollama / OpenAI互換サーバー）
-- `js/slm-worker.js` : ブラウザ内CPU実行用のWeb Worker（Transformers.js + WebAssembly）
+- `js/slm-worker.js` : ブラウザ内CPU実行エンジン（Transformers.js + WebAssembly）。`index.html` を直接開いた場合（file://）でも動くよう Blob URL のWeb Workerとして起動し、Workerが使えない環境では画面側で実行
 - `js/insights.js` : 研究分野辞書・特徴抽出・興味マッチ度・訪問チェックリスト
 - `js/url-fetcher.js` : URL取得とHTML/Markdownの構造化テキスト変換
 - `js/ai-parser.js` : Gemini API連携モジュール（オプション）

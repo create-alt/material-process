@@ -13,7 +13,6 @@
  */
 
 const WEBLLM_MODULE_URL = 'https://esm.run/@mlc-ai/web-llm@0.2.85';
-const CPU_WORKER_URL = 'js/slm-worker.js?v=12';
 
 class LocalSlm {
   constructor() {
@@ -180,21 +179,68 @@ class LocalSlm {
   }
 
   async loadCpu(onProgress) {
-    if (typeof Worker === 'undefined') throw new Error('このブラウザはWeb Workerに対応していません');
-    if (!this.worker) {
-      this.worker = new Worker(CPU_WORKER_URL, { type: 'module' });
-      this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
-      this.worker.onerror = (e) => {
-        const err = new Error(`CPU実行ワーカーでエラーが発生しました: ${e.message || 'モジュールを読み込めません'}`);
+    if (!window.LabHubSlmWorker) throw new Error('CPU実行エンジン（js/slm-worker.js）が読み込まれていません');
+    if (!this.worker) this.startWorker(false);
+    onProgress(0, 'CPU用モデル（WebAssembly）を準備中...');
+    const load = () => this.callWorker({ type: 'load', model: this.config.cpuModel, dtypes: ['q4', 'q8'] }, onProgress, 30 * 60 * 1000);
+
+    let result;
+    try {
+      result = await load();
+    } catch (e) {
+      // Workerを起動できなかった場合（ブラウザの制限など）は画面側で実行して再試行
+      if (!this.workerStartFailed || this.worker?.inPage) throw e;
+      console.warn('[SLM] worker failed to start, running in page:', e);
+      this.startWorker(true);
+      result = await load();
+    }
+    this.workerModel = this.config.cpuModel;
+
+    const notes = [];
+    if (this.worker.inPage) notes.push('画面側で実行中のため、判定中は操作が重くなることがあります');
+    if (!result.cache) notes.push('ブラウザにモデルを保存できないため毎回ダウンロードします（python server.py で開くと保存されます）');
+    if (notes.length) this.engineNote = `${this.engineNote}。${notes.join('。')}`;
+    onProgress(1, `モデルの準備ができました（CPU・${result.dtype}・${result.threads}スレッド）`);
+  }
+
+  /**
+   * CPU実行エンジンを起動（file:// でも動くよう Blob URL のWorkerを使用。作れなければ画面側で実行）
+   */
+  startWorker(inPage) {
+    this.terminateWorker();
+    const factory = window.LabHubSlmWorker;
+    let worker = null;
+    if (!inPage) {
+      try {
+        worker = factory.createWorker();
+      } catch (e) {
+        console.warn('[SLM] cannot create worker, running in page:', e);
+      }
+    }
+    if (!worker) worker = factory.createInPageWorker();
+
+    this.worker = worker;
+    this.workerStarted = false;
+    this.workerStartFailed = false;
+    worker.onmessage = (e) => {
+      if (e.data && e.data.type === 'fatal') {
+        // Worker内でライブラリを読み込めなかった
+        this.workerStartFailed = true;
+        const err = new Error(`CPU実行エンジンを読み込めませんでした: ${e.data.error}`);
         this.workerPending.forEach(p => p.reject(err));
         this.workerPending.clear();
-        this.terminateWorker();
-      };
-    }
-    onProgress(0, 'CPU用モデル（WebAssembly）を準備中...');
-    const result = await this.callWorker({ type: 'load', model: this.config.cpuModel, dtypes: ['q4', 'q8'] }, onProgress, 30 * 60 * 1000);
-    this.workerModel = this.config.cpuModel;
-    onProgress(1, `モデルの準備ができました（CPU・${result.dtype}・${result.threads}スレッド）`);
+        return;
+      }
+      this.workerStarted = true;
+      this.onWorkerMessage(e.data);
+    };
+    worker.onerror = (e) => {
+      if (e && e.preventDefault) e.preventDefault();
+      this.workerStartFailed = !this.workerStarted;
+      const err = new Error(`CPU実行エンジンでエラーが発生しました: ${(e && e.message) || 'モジュールを読み込めません（ネットワーク接続を確認してください）'}`);
+      this.workerPending.forEach(p => p.reject(err));
+      this.workerPending.clear();
+    };
   }
 
   callWorker(message, onProgress = () => {}, timeoutMs = 5 * 60 * 1000) {
@@ -227,6 +273,8 @@ class LocalSlm {
 
   terminateWorker() {
     if (this.worker) this.worker.terminate();
+    this.workerPending.forEach(p => p.reject(new Error('CPU実行エンジンを停止しました')));
+    this.workerPending.clear();
     this.worker = null;
     this.workerModel = null;
     if (this.activeEngine === 'cpu') this.activeEngine = null;
