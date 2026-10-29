@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const parser = window.universityParser;
   const insights = window.labInsights;
+  const slm = window.localSlm;
 
   const UNI_FIELDS = ['name', 'faculty', 'department', 'type', 'location', 'url', 'overview', 'tuition', 'career'];
   const TRACKS = Object.entries(parser.admissionTracks).map(([key, v]) => ({ key, ...v }));
@@ -126,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 初期化 ---
   buildStaticUi();
   updateAiBadge();
+  updateSlmBadge();
   updateInterestBadge();
   renderLabEditor();
   renderAll();
@@ -276,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnParseText.innerHTML = '<span>解析中 (Gemini AI)...</span>';
         const aiRaw = await ai.parseWithAi(text);
         const merged = parser.mergeResults(parser.normalizeResult(aiRaw, text), heuristic);
+        await enrichLabsFromText(merged, text, false);
         fillForm(merged);
         showToast(`AIで抽出しました: ${describeResult(merged)}`, 'success');
         return;
@@ -288,8 +291,78 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    const { added, slmUsed } = await enrichLabsFromText(heuristic, text, true);
     fillForm(heuristic);
-    showToast(`抽出しました: ${describeResult(heuristic)}`, 'success');
+    const via = slmUsed ? '（ローカルSLM併用）' : '';
+    showToast(`抽出しました${via}: ${describeResult(heuristic)}${added ? `（一覧・文脈から +${added}件）` : ''}`, 'success');
+  }
+
+  /**
+   * 「〇〇研究室」と書かれていない教員名の列挙や表・文章中の研究室を、
+   * 研究室候補抽出エンジン（＋ローカルSLM）で拾って解析結果に追加する
+   * @returns {Promise<{added: number, slmUsed: boolean}>} 追加した研究室数とSLMを使えたか
+   */
+  async function enrichLabsFromText(result, text, allowSlm) {
+    const extractor = window.labExtractor;
+    const useSlm = allowSlm && slm.isEnabled();
+    const lines = extractor.linesFromText(text);
+
+    let found;
+    let slmUsed = useSlm;
+    try {
+      btnParseText.disabled = true;
+      if (useSlm && !slm.isLoaded()) {
+        await slm.ensureReady((p, msg) => {
+          btnParseText.innerHTML = `<span>SLMを準備中 ${Math.round(p * 100)}%</span>`;
+          if (msg) btnParseText.title = msg;
+        });
+      }
+      found = await extractor.extract(lines, {
+        slm: useSlm ? slm : null,
+        title: result.university.name,
+        onProgress: (done, total) => {
+          btnParseText.innerHTML = `<span>ローカルSLMで研究室を判定中 (${done}/${total})</span>`;
+        }
+      });
+    } catch (e) {
+      showToast(`ローカルSLMを使えませんでした: ${e.message}`, 'warning');
+      found = await extractor.extract(lines, {});
+      slmUsed = false;
+    } finally {
+      btnParseText.disabled = false;
+      btnParseText.innerHTML = parseButtonHtml;
+    }
+    if (found.slmError) {
+      showToast(`ローカルSLMエラー（ルールのみで抽出）: ${found.slmError.message}`, 'warning');
+      slmUsed = false;
+    }
+
+    let added = 0;
+    found.labs.forEach(item => {
+      const same = result.labs.find(l =>
+        extractor.labKey(l.name) === extractor.labKey(item.name) ||
+        (item.professor && l.professor && extractor.squash(l.professor).includes(extractor.squash(item.professor).replace(/^.*?(教授|講師|助教)/, '')))
+      );
+      if (same) {
+        if (!same.professor && item.professor) same.professor = item.professor;
+        if (!same.area && item.field) same.area = item.field;
+        if (!same.url && item.url) same.url = item.url;
+        return;
+      }
+      result.labs.push(crawlItemToLab(item));
+      added++;
+    });
+    return { added, slmUsed };
+  }
+
+  function crawlItemToLab(item) {
+    const lab = parser.createLab(item.name);
+    lab.professor = item.professor || '';
+    lab.area = item.field || '';
+    lab.description = [item.topic, item.description].filter(Boolean).join('\n');
+    lab.keywords = item.keywords || '';
+    lab.url = item.url || '';
+    return lab;
   }
 
   function describeResult(result) {
@@ -1665,6 +1738,370 @@ document.addEventListener('DOMContentLoaded', () => {
     badge.textContent = on ? 'ON' : 'OFF';
     badge.className = on ? 'ai-status-on' : 'ai-status-off';
   }
+
+  // =========================================================
+  // 11. ローカルSLM設定
+  // =========================================================
+
+  function updateSlmBadge() {
+    const badge = $('slmStatusBadge');
+    const backend = slm.config.backend;
+    badge.textContent = backend === 'webllm' ? 'ブラウザ' : backend === 'server' ? 'サーバー' : 'OFF';
+    badge.className = slm.isEnabled() ? 'ai-status-on' : 'ai-status-off';
+    $('btnSlmSettings').title = `ローカルSLM: ${slm.describe()}`;
+  }
+
+  function selectedSlmBackend() {
+    return document.querySelector('input[name="slmBackend"]:checked')?.value || 'none';
+  }
+
+  function toggleSlmSections() {
+    const backend = selectedSlmBackend();
+    $('slmWebllmSection').classList.toggle('hidden', backend !== 'webllm');
+    $('slmServerSection').classList.toggle('hidden', backend !== 'server');
+  }
+
+  function readSlmForm() {
+    return {
+      backend: selectedSlmBackend(),
+      webllmModel: $('slmWebllmModel').value,
+      serverFlavor: $('slmServerFlavor').value,
+      serverUrl: $('slmServerUrl').value.trim() || 'http://127.0.0.1:11434',
+      serverModel: $('slmServerModel').value.trim()
+    };
+  }
+
+  function setSlmProgress(ratio, text) {
+    $('slmProgressFill').style.width = `${Math.round((ratio || 0) * 100)}%`;
+    $('slmStatusText').textContent = text || '';
+  }
+
+  $('btnSlmSettings').addEventListener('click', () => {
+    const c = slm.config;
+    document.querySelectorAll('input[name="slmBackend"]').forEach(r => { r.checked = r.value === c.backend; });
+    $('slmWebllmModel').innerHTML = slm.webllmModels
+      .map(m => `<option value="${m.id}"${m.id === c.webllmModel ? ' selected' : ''}>${escapeHtml(m.label)}</option>`)
+      .join('');
+    $('slmWebGpuStatus').innerHTML = slm.hasWebGpu()
+      ? '<span class="gpu-ok">✅ このブラウザはWebGPUに対応しています</span>'
+      : '<span class="gpu-ng">⚠️ WebGPU非対応です。最新のChrome/Edgeを使うか「ローカルLLMサーバー」を選んでください</span>';
+    $('slmServerFlavor').value = c.serverFlavor;
+    $('slmServerUrl').value = c.serverUrl;
+    $('slmServerModel').value = c.serverModel;
+    $('slmServerModelList').innerHTML = slm.serverModelHints.map(m => `<option value="${m}">`).join('');
+    setSlmProgress(slm.isLoaded() && slm.isEnabled() ? 1 : 0, slm.isEnabled() ? `現在: ${slm.describe()}${c.backend === 'webllm' && !slm.isLoaded() ? '（未読み込み）' : ''}` : '');
+    toggleSlmSections();
+    openModal('slmModal');
+  });
+
+  document.querySelectorAll('input[name="slmBackend"]').forEach(r => r.addEventListener('change', toggleSlmSections));
+
+  $('slmServerFlavor').addEventListener('change', () => {
+    const url = $('slmServerUrl');
+    // よく使うポートの自動切替（Ollama: 11434 / LM Studio: 1234）
+    if ($('slmServerFlavor').value === 'openai' && /:11434\/?$/.test(url.value)) url.value = 'http://127.0.0.1:1234';
+    if ($('slmServerFlavor').value === 'ollama' && /:1234\/?$/.test(url.value)) url.value = 'http://127.0.0.1:11434';
+  });
+
+  $('btnSlmListModels').addEventListener('click', async () => {
+    slm.saveConfig(readSlmForm());
+    try {
+      const models = await slm.listServerModels();
+      $('slmServerModelList').innerHTML = [...new Set([...models, ...slm.serverModelHints])].map(m => `<option value="${escapeHtml(m)}">`).join('');
+      if (models.length && !models.includes($('slmServerModel').value)) $('slmServerModel').value = models[0];
+      showToast(models.length ? `モデル ${models.length}件 を取得しました` : 'インストール済みのモデルがありません（例: ollama pull qwen2.5:3b）', models.length ? 'success' : 'warning');
+    } catch (e) {
+      showToast(e.message, 'warning');
+    }
+  });
+
+  $('btnSlmSave').addEventListener('click', () => {
+    slm.saveConfig(readSlmForm());
+    updateSlmBadge();
+    closeModal('slmModal');
+    showToast(`ローカルSLM: ${slm.describe()}`, 'success');
+  });
+
+  $('btnSlmTest').addEventListener('click', async () => {
+    slm.saveConfig(readSlmForm());
+    updateSlmBadge();
+    if (!slm.isEnabled()) {
+      showToast('「ブラウザ内で実行」または「ローカルLLMサーバー」を選んでください', 'warning');
+      return;
+    }
+    const btn = $('btnSlmTest');
+    btn.disabled = true;
+    try {
+      setSlmProgress(0, '準備中...');
+      const { result, ms } = await slm.test((p, text) => setSlmProgress(p, text));
+      setSlmProgress(1, `✅ 動作OK（${(ms / 1000).toFixed(1)}秒）: ${JSON.stringify(result)}`);
+      showToast('ローカルSLMの動作を確認しました', 'success');
+    } catch (e) {
+      setSlmProgress(0, `❌ ${e.message}`);
+      showToast(e.message, 'warning');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // =========================================================
+  // 12. サイト自動探索（クローラー）
+  // =========================================================
+  const crawlState = { running: false, cancelled: false, result: null, selected: new Set() };
+  const PAGE_KIND_LABELS = { 'lab-list': '研究室一覧', lab: '研究室', 'lab-detail': '研究室ページ', admission: '入試', org: '研究科・学科', other: 'その他' };
+
+  $('btnOpenCrawler').addEventListener('click', () => {
+    const url = pageUrlInput.value.trim() || uniInputs.url.value.trim();
+    if (url && !$('crawlStartUrl').value) $('crawlStartUrl').value = url;
+    const useSlm = $('crawlUseSlm');
+    useSlm.disabled = !slm.isEnabled();
+    if (!crawlState.running) useSlm.checked = slm.isEnabled();
+    $('crawlSlmLabel').textContent = slm.isEnabled()
+      ? `ローカルSLMで文脈判定（${slm.describe()}）`
+      : 'ローカルSLMで文脈判定（未設定: ヘッダーの「🧠 ローカルSLM」から設定）';
+    openModal('crawlModal');
+    $('crawlStartUrl').focus();
+  });
+
+  $('crawlStartUrl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      startCrawl();
+    }
+  });
+  $('btnStartCrawl').addEventListener('click', () => startCrawl());
+  $('btnStopCrawl').addEventListener('click', () => {
+    crawlState.cancelled = true;
+    $('crawlStatus').textContent = '停止しています...（処理中のページが終わり次第停止）';
+  });
+
+  function setCrawlRunning(running) {
+    crawlState.running = running;
+    $('btnStartCrawl').classList.toggle('hidden', running);
+    $('btnStopCrawl').classList.toggle('hidden', !running);
+    $('crawlStartUrl').disabled = running;
+  }
+
+  async function startCrawl() {
+    if (crawlState.running) return;
+    let url = $('crawlStartUrl').value.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+    try {
+      new URL(url);
+    } catch {
+      showToast('探索を開始するURLを入力してください', 'warning');
+      return;
+    }
+    $('crawlStartUrl').value = url;
+
+    const num = (id, def, min, max) => Math.min(max, Math.max(min, Number($(id).value) || def));
+    const useSlm = $('crawlUseSlm').checked && slm.isEnabled();
+    const opts = {
+      maxPages: num('crawlMaxPages', 25, 3, 150),
+      maxDepth: num('crawlMaxDepth', 3, 1, 6),
+      infoOnly: $('crawlInfoOnly').checked,
+      findAdmissions: $('crawlAdmissions').checked,
+      followLabPages: $('crawlFollowLabs').checked,
+      labPageLimit: num('crawlLabPageLimit', 10, 0, 60),
+      slm: useSlm ? slm : null
+    };
+
+    crawlState.cancelled = false;
+    crawlState.result = null;
+    crawlState.selected = new Set();
+    setCrawlRunning(true);
+    $('crawlLog').innerHTML = '';
+    $('crawlResults').innerHTML = '<div class="text-dim">探索中です。終わると分野別の研究室一覧が表示されます。</div>';
+    $('crawlLabCount').textContent = '0';
+    $('crawlAdmissionNote').textContent = '';
+    $('btnImportCrawl').disabled = true;
+
+    try {
+      if (useSlm && !slm.isLoaded()) {
+        $('crawlStatus').textContent = 'ローカルSLMを準備しています...';
+        await slm.ensureReady((p, text) => {
+          $('crawlProgressFill').style.width = `${Math.round(p * 100)}%`;
+          $('crawlStatus').textContent = `SLM準備中: ${text}`;
+        });
+      }
+
+      const result = await window.siteCrawler.crawl(url, opts, {
+        isCancelled: () => crawlState.cancelled,
+        onLog: appendCrawlLog,
+        onProgress: (st) => {
+          let ratio = st.visited / st.maxPages;
+          let text = `${st.visited}/${st.maxPages}ページ・研究室候補 ${st.labs}件・待機中リンク ${st.queued}件`;
+          if (st.phase === 'slm') text = `ローカルSLMで判定中 (${st.slmDone}/${st.slmTotal}) — ${shortUrl(st.current)}`;
+          else if (st.phase === 'details') {
+            ratio = (st.detailDone + 1) / st.detailTotal;
+            text = `研究室ページの概要を取得中 (${st.detailDone + 1}/${st.detailTotal}) — ${shortUrl(st.current)}`;
+          } else if (st.phase === 'done') {
+            ratio = 1;
+          } else if (st.current) {
+            text += ` — ${shortUrl(st.current)}`;
+          }
+          $('crawlProgressFill').style.width = `${Math.round(Math.min(1, ratio) * 100)}%`;
+          $('crawlStatus').textContent = text;
+        }
+      });
+
+      crawlState.result = result;
+      result.labs.forEach((lab, i) => {
+        if (!lab.offField && lab.confidence >= 0.45) crawlState.selected.add(i);
+      });
+      renderCrawlResults();
+
+      const tracks = TRACKS.filter(t => isTrackFilled(result.admissions[t.key])).map(t => t.label);
+      $('crawlAdmissionNote').textContent = tracks.length ? `📝 入試情報: ${tracks.join('・')}` : '';
+      $('crawlStatus').textContent = `${result.cancelled ? '停止しました' : '完了'}: ${result.pages.length}ページを探索し、研究室 ${result.labs.length}件を見つけました${result.university.name ? `（${result.university.name}）` : ''}`;
+      $('crawlProgressFill').style.width = '100%';
+      if (result.labs.length === 0) {
+        showToast('研究室が見つかりませんでした。研究科・専攻のページから開始するか、最大ページ数を増やしてください', 'warning');
+      }
+    } catch (e) {
+      $('crawlStatus').textContent = `❌ ${e.message}`;
+      showToast(e.message, 'warning');
+    } finally {
+      setCrawlRunning(false);
+    }
+  }
+
+  function shortUrl(u) {
+    try {
+      const x = new URL(u);
+      return truncate(decodeURIComponent(x.host + x.pathname), 60);
+    } catch {
+      return truncate(u || '', 60);
+    }
+  }
+
+  function appendCrawlLog(entry) {
+    const li = document.createElement('li');
+    li.className = `crawl-log-item log-${entry.status}`;
+    const icon = entry.status === 'ok' ? (entry.labs ? '🔬' : '📄') : entry.status === 'skip' ? '⏭️' : '⚠️';
+    const kind = entry.kind ? `<span class="kind-badge kind-${entry.kind}">${escapeHtml(PAGE_KIND_LABELS[entry.kind] || entry.kind)}</span>` : '';
+    li.innerHTML = `
+      <div class="crawl-log-main">${icon} ${kind}
+        <a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener" title="${escapeHtml(entry.url)}">${escapeHtml(truncate(entry.title || shortUrl(entry.url), 48))}</a>
+      </div>
+      <div class="crawl-log-sub">
+        ${entry.status === 'ok' && entry.kind !== 'lab-detail' ? `研究室 ${entry.labs}件 / 次のリンク ${entry.queued}件` : ''}
+        ${entry.message ? ` ${escapeHtml(entry.message)}` : ''}
+        ${entry.reason && entry.depth ? `<span class="text-dim">← ${escapeHtml(truncate(entry.reason, 50))}</span>` : ''}
+      </div>`;
+    const log = $('crawlLog');
+    log.prepend(li);
+    while (log.children.length > 200) log.lastChild.remove();
+  }
+
+  function crawlGroupKey(lab) {
+    if ($('crawlGroupBy').value === 'tag') {
+      return lab.tags && lab.tags.length ? `${insights.getArea(lab.tags[0]).icon} ${insights.getArea(lab.tags[0]).label}` : '分野タグなし';
+    }
+    return lab.field || 'その他（分野の見出しなし）';
+  }
+
+  function renderCrawlResults() {
+    const result = crawlState.result;
+    const wrap = $('crawlResults');
+    if (!result) return;
+    $('crawlLabCount').textContent = result.labs.length;
+    $('btnImportCrawl').disabled = crawlState.selected.size === 0;
+    $('btnImportCrawl').textContent = `選択した研究室（${crawlState.selected.size}件）を解析結果に読み込む`;
+    if (result.labs.length === 0) {
+      wrap.innerHTML = '<div class="text-dim">研究室は見つかりませんでした。</div>';
+      return;
+    }
+
+    const groups = new Map();
+    result.labs.forEach((lab, i) => {
+      const key = crawlGroupKey(lab);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(i);
+    });
+    const ordered = [...groups.entries()].sort((a, b) => {
+      const other = (k) => /^その他|なし$/.test(k);
+      return other(a[0]) - other(b[0]) || b[1].length - a[1].length;
+    });
+
+    wrap.innerHTML = ordered.map(([key, idxs]) => {
+      const allOn = idxs.every(i => crawlState.selected.has(i));
+      return `
+        <div class="crawl-group">
+          <label class="crawl-group-head">
+            <input type="checkbox" data-group="${escapeHtml(key)}" ${allOn ? 'checked' : ''}>
+            <strong>${escapeHtml(key)}</strong> <span class="text-dim">${idxs.length}件</span>
+          </label>
+          ${idxs.map(i => renderCrawlLab(result.labs[i], i)).join('')}
+        </div>`;
+    }).join('');
+  }
+
+  function renderCrawlLab(lab, i) {
+    const sources = lab.sources.map(s => `<span class="src-badge src-${s}">${s === 'slm' ? 'SLM' : 'ルール'}</span>`).join('');
+    const tags = (lab.tags || []).slice(0, 3).map(k => {
+      const a = insights.getArea(k);
+      return `<span class="tag-chip">${a.icon} ${escapeHtml(a.label)}</span>`;
+    }).join('');
+    const sub = [lab.professor, lab.topic].filter(Boolean).join(' ・ ');
+    return `
+      <label class="crawl-lab${lab.offField ? ' off-field' : ''}" title="${escapeHtml((lab.reasons || []).join('、'))}">
+        <input type="checkbox" data-lab-idx="${i}" ${crawlState.selected.has(i) ? 'checked' : ''}>
+        <div class="crawl-lab-body">
+          <div class="crawl-lab-title">
+            <strong>${escapeHtml(lab.name)}</strong>
+            ${lab.derived ? '<span class="mini-badge">教員名から推定</span>' : ''}
+            ${lab.offField ? '<span class="mini-badge mini-warn">情報系以外?</span>' : ''}
+            ${sources}
+            <span class="conf">${Math.round(lab.confidence * 100)}%</span>
+            ${lab.url ? `<a href="${escapeHtml(lab.url)}" target="_blank" rel="noopener" title="${escapeHtml(lab.url)}">🔗</a>` : ''}
+          </div>
+          ${sub ? `<div class="crawl-lab-sub">${escapeHtml(truncate(sub, 110))}</div>` : ''}
+          ${lab.description ? `<div class="crawl-lab-desc">${escapeHtml(truncate(lab.description, 120))}</div>` : ''}
+          ${tags ? `<div>${tags}</div>` : ''}
+        </div>
+      </label>`;
+  }
+
+  $('crawlResults').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.labIdx !== undefined) {
+      const i = Number(t.dataset.labIdx);
+      if (t.checked) crawlState.selected.add(i);
+      else crawlState.selected.delete(i);
+      renderCrawlResults();
+    } else if (t.dataset.group !== undefined) {
+      crawlState.result.labs.forEach((lab, i) => {
+        if (crawlGroupKey(lab) !== t.dataset.group) return;
+        if (t.checked) crawlState.selected.add(i);
+        else crawlState.selected.delete(i);
+      });
+      renderCrawlResults();
+    }
+  });
+
+  $('crawlGroupBy').addEventListener('change', () => renderCrawlResults());
+  $('btnCrawlSelectAll').addEventListener('click', () => {
+    if (!crawlState.result) return;
+    crawlState.result.labs.forEach((_, i) => crawlState.selected.add(i));
+    renderCrawlResults();
+  });
+  $('btnCrawlSelectNone').addEventListener('click', () => {
+    crawlState.selected.clear();
+    renderCrawlResults();
+  });
+
+  $('btnImportCrawl').addEventListener('click', () => {
+    const result = crawlState.result;
+    if (!result || crawlState.selected.size === 0) return;
+    const labs = [...crawlState.selected].sort((a, b) => a - b).map(i => crawlItemToLab(result.labs[i]));
+    const university = { ...parser.getEmptyResult().university, ...result.university };
+    fillForm({ university, admissions: result.admissions, labs, events: result.events });
+    if (!university.url) uniInputs.url.value = $('crawlStartUrl').value;
+    closeModal('crawlModal');
+    showToast(`研究室 ${labs.length}件 を読み込みました。内容を確認して「大学・研究室を保存」を押してください`, 'success');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   // =========================================================
   // モーダル共通

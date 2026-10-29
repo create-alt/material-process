@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
   <div class="app-layout">
@@ -29,6 +29,9 @@
       <div class="header-actions">
         <button id="btnInterest" class="btn btn-outline" title="興味のある分野を登録すると研究室ごとのマッチ度を表示します">
           🎯 興味分野 <span id="interestBadge" class="ai-status-off">未設定</span>
+        </button>
+        <button id="btnSlmSettings" class="btn btn-outline" title="PC上で動く小規模言語モデル(SLM)で研究室を文脈から判定します">
+          🧠 ローカルSLM <span id="slmStatusBadge" class="ai-status-off">OFF</span>
         </button>
         <button id="btnAiSettings" class="btn btn-outline" title="Gemini AI連携設定">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -77,6 +80,9 @@
               <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"></path>
             </svg>
             URLから取得＆解析
+          </button>
+          <button id="btnOpenCrawler" class="btn btn-accent btn-sm" title="トップページなどからリンクをたどり、研究室一覧・入試ページを自動で探します">
+            🕸️ サイトを自動探索
           </button>
         </div>
 
@@ -357,6 +363,146 @@
       </div>
     </div>
 
+    <!-- サイト自動探索モーダル -->
+    <div id="crawlModal" class="modal-overlay hidden">
+      <div class="modal-card modal-xwide">
+        <div class="modal-header">
+          <h3>🕸️ サイト自動探索 <span class="modal-sub">トップページ・研究科ページからリンクをたどって研究室一覧を自動収集</span></h3>
+          <button class="modal-close" data-close-modal>&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="crawl-form">
+            <div class="url-input-group">
+              <span class="url-icon">🏫</span>
+              <input type="url" id="crawlStartUrl" placeholder="https://www.example.ac.jp/ （大学・研究科・学科のトップページなど）">
+            </div>
+            <button id="btnStartCrawl" class="btn btn-primary">探索開始</button>
+            <button id="btnStopCrawl" class="btn btn-outline-danger hidden">停止</button>
+          </div>
+          <div class="crawl-options">
+            <label>最大ページ数 <input type="number" id="crawlMaxPages" min="3" max="150" value="25"></label>
+            <label>リンクの深さ <input type="number" id="crawlMaxDepth" min="1" max="6" value="3"></label>
+            <label class="checkbox-label"><input type="checkbox" id="crawlInfoOnly" checked> <span>情報系を優先</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="crawlAdmissions" checked> <span>入試・編入ページも探す</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="crawlFollowLabs" checked> <span>研究室ページの概要も取得（最大 <input type="number" id="crawlLabPageLimit" min="0" max="60" value="10"> 件）</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="crawlUseSlm"> <span id="crawlSlmLabel">ローカルSLMで文脈判定</span></label>
+          </div>
+          <p class="field-help">同じサイト（同じドメイン）の中だけを、robots.txtを守り1ページごとに待機しながら探索します。PDFの募集要項は読み込めないため、必要に応じてテキストを貼り付けてください。</p>
+
+          <div class="crawl-progress">
+            <div class="progress-bar"><div class="progress-fill" id="crawlProgressFill"></div></div>
+            <span id="crawlStatus" class="crawl-status">開始URLを入力して「探索開始」を押してください</span>
+          </div>
+
+          <div class="crawl-columns">
+            <div class="crawl-log-wrap">
+              <div class="crawl-col-title">📜 探索ログ</div>
+              <ol id="crawlLog" class="crawl-log"></ol>
+            </div>
+            <div class="crawl-results-wrap">
+              <div class="crawl-col-title">
+                🔬 見つかった研究室 (<span id="crawlLabCount">0</span>)
+                <select id="crawlGroupBy" class="select-sm">
+                  <option value="field">ページの分野見出しで分類</option>
+                  <option value="tag">研究分野タグ(自動)で分類</option>
+                </select>
+                <button id="btnCrawlSelectAll" class="btn btn-sm btn-ghost">全選択</button>
+                <button id="btnCrawlSelectNone" class="btn btn-sm btn-ghost">全解除</button>
+              </div>
+              <div id="crawlResults" class="crawl-results">
+                <div class="text-dim">探索すると、ここに分野別の研究室一覧が表示されます。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span id="crawlAdmissionNote" class="crawl-admission-note"></span>
+          <span class="footer-spacer"></span>
+          <button id="btnImportCrawl" class="btn btn-success" disabled>選択した研究室を解析結果に読み込む</button>
+          <button class="btn btn-outline" data-close-modal>閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ローカルSLM設定モーダル -->
+    <div id="slmModal" class="modal-overlay hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-header">
+          <h3>🧠 ローカルSLM（小規模言語モデル）設定</h3>
+          <button class="modal-close" data-close-modal>&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            クラウドに送らず、お使いのPCだけで動く言語モデルで「どの行が研究室か」「どのリンクをたどるか」を文脈から判断します。
+            「〇〇研究室」と書かれていない教員名の一覧や、文章中に出てくる研究室も拾えるようになります。
+            モデルの出力は必ずページ内の行番号と照合し、ページに書かれていない研究室名は採用しません。
+          </p>
+          <div class="slm-backends">
+            <label class="slm-backend">
+              <input type="radio" name="slmBackend" value="none">
+              <span><strong>使わない</strong><br><small>ルール（ヒューリスティック）のみで抽出</small></span>
+            </label>
+            <label class="slm-backend">
+              <input type="radio" name="slmBackend" value="webllm">
+              <span><strong>ブラウザ内で実行</strong><br><small>WebLLM / WebGPU。インストール不要（初回のみモデルをダウンロード）</small></span>
+            </label>
+            <label class="slm-backend">
+              <input type="radio" name="slmBackend" value="server">
+              <span><strong>ローカルLLMサーバー</strong><br><small>Ollama・LM Studio・llama.cpp など（高速・大きめのモデルも可）</small></span>
+            </label>
+          </div>
+
+          <div id="slmWebllmSection" class="slm-section">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="slmWebllmModel">モデル</label>
+                <select id="slmWebllmModel"></select>
+              </div>
+              <div class="form-group">
+                <label>WebGPU</label>
+                <div id="slmWebGpuStatus" class="slm-gpu-status"></div>
+              </div>
+            </div>
+            <span class="field-help">モデルはHugging Faceから初回のみダウンロードされ、ブラウザ内にキャッシュされます（数百MB〜数GB）。</span>
+          </div>
+
+          <div id="slmServerSection" class="slm-section">
+            <div class="form-row-3">
+              <div class="form-group">
+                <label for="slmServerFlavor">API形式</label>
+                <select id="slmServerFlavor">
+                  <option value="ollama">Ollama（ネイティブAPI）</option>
+                  <option value="openai">OpenAI互換（LM Studio / llama.cpp / Ollama /v1）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="slmServerUrl">サーバーURL</label>
+                <input type="text" id="slmServerUrl" placeholder="http://127.0.0.1:11434">
+              </div>
+              <div class="form-group">
+                <label for="slmServerModel">モデル名</label>
+                <input type="text" id="slmServerModel" list="slmServerModelList" placeholder="qwen2.5:3b">
+                <datalist id="slmServerModelList"></datalist>
+              </div>
+            </div>
+            <div class="slm-hint">
+              Ollamaの例: <code>ollama pull qwen2.5:3b</code> を実行してから、このアプリを <code>python server.py</code> で開いてください。
+              <button id="btnSlmListModels" class="btn btn-sm btn-ghost" type="button">インストール済みモデルを取得</button>
+            </div>
+          </div>
+
+          <div class="crawl-progress">
+            <div class="progress-bar"><div class="progress-fill" id="slmProgressFill"></div></div>
+            <span id="slmStatusText" class="crawl-status"></span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnSlmTest" class="btn btn-outline">モデルを準備してテスト</button>
+          <button id="btnSlmSave" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+
     <!-- AI設定モーダル -->
     <div id="aiModal" class="modal-overlay hidden">
       <div class="modal-card">
@@ -431,11 +577,14 @@
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="js/samples.js?v=10"></script>
-  <script src="js/insights.js?v=10"></script>
-  <script src="js/parser.js?v=10"></script>
-  <script src="js/url-fetcher.js?v=10"></script>
-  <script src="js/ai-parser.js?v=10"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/samples.js?v=11"></script>
+  <script src="js/insights.js?v=11"></script>
+  <script src="js/parser.js?v=11"></script>
+  <script src="js/url-fetcher.js?v=11"></script>
+  <script src="js/slm.js?v=11"></script>
+  <script src="js/lab-extractor.js?v=11"></script>
+  <script src="js/crawler.js?v=11"></script>
+  <script src="js/ai-parser.js?v=11"></script>
+  <script src="js/app.js?v=11"></script>
 </body>
 </html>

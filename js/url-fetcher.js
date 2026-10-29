@@ -129,6 +129,63 @@ class PageUrlFetcher {
     );
   }
 
+  /**
+   * クローラー用: リンク(aタグ)を含む生のHTMLを取得する
+   * 一度成功した取得ルートを記憶し、以降のページはそのルートを優先する
+   * @returns {Promise<{ html: string, finalUrl: string, source: string }>}
+   */
+  async fetchRawHtml(rawUrl) {
+    const url = (rawUrl || '').trim();
+    if (!/^https?:\/\//i.test(url)) throw new Error('有効なURLではありません');
+
+    const routes = {
+      'local-proxy': async () => {
+        if (!window.location.protocol.startsWith('http')) return null;
+        const res = await this.fetchWithTimeout(`/api/fetch-url?url=${encodeURIComponent(url)}`, {}, 15000);
+        if (res.status === 404 && !res.headers.get('content-type')?.includes('json')) return null;
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data.html ? { html: data.html, finalUrl: data.url || url } : null;
+      },
+      'jina-reader': async () => {
+        const res = await this.fetchWithTimeout(`https://r.jina.ai/${url}`, { headers: { 'X-Return-Format': 'html' } }, 20000);
+        return res.ok ? { html: await res.text(), finalUrl: url } : null;
+      },
+      'allorigins': async () => {
+        const res = await this.fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, {}, 15000);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data && data.contents ? { html: data.contents, finalUrl: data.status?.url || url } : null;
+      },
+      'codetabs': async () => {
+        const res = await this.fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, {}, 15000);
+        return res.ok ? { html: await res.text(), finalUrl: url } : null;
+      }
+    };
+
+    const order = Object.keys(routes);
+    if (this.preferredRoute) {
+      order.splice(order.indexOf(this.preferredRoute), 1);
+      order.unshift(this.preferredRoute);
+    }
+
+    let lastError = null;
+    for (const name of order) {
+      try {
+        const result = await routes[name]();
+        if (result && result.html) {
+          this.preferredRoute = name;
+          return { ...result, source: name };
+        }
+      } catch (e) {
+        lastError = e;
+        // ローカルプロキシが対象サイトのエラー(404等)を返した場合は他ルートでも同じなので打ち切る
+        if (name === 'local-proxy' && /HTTP|返しました/.test(e.message || '')) throw e;
+      }
+    }
+    throw new Error(lastError?.message || 'ページを取得できませんでした');
+  }
+
   async fetchWithTimeout(resource, options = {}, timeoutMs = 12000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
