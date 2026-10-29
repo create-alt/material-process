@@ -1700,13 +1700,45 @@ document.addEventListener('DOMContentLoaded', () => {
       geminiModel.value = ai.model;
       aiAutoParseCheck.checked = ai.autoParse;
     }
+    updateAiKeyStatus();
     openModal('aiModal');
+  });
+
+  function updateAiKeyStatus() {
+    const ai = window.geminiLabParser;
+    const status = $('aiKeyStatus');
+    const saved = ai && ai.isConfigured();
+    status.textContent = saved ? `🔑 保存済みのAPIキー: ${ai.maskedKey()}` : '🔓 このブラウザに保存されたAPIキーはありません';
+    status.className = `api-key-status ${saved ? 'is-saved' : ''}`;
+    $('btnDeleteApiKey').disabled = !saved && !geminiApiKey.value;
+  }
+
+  geminiApiKey.addEventListener('input', () => {
+    $('btnDeleteApiKey').disabled = !window.geminiLabParser?.isConfigured() && !geminiApiKey.value;
+  });
+
+  // APIキーの削除（2段階確認）: メモリ・LocalStorage・SessionStorage・Cache Storage・入力欄から消去
+  $('btnDeleteApiKey').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    confirmThen(btn, async () => {
+      btn.classList.remove('confirming-delete');
+      btn.innerHTML = '🗑️ APIキーを削除';
+      const ai = window.geminiLabParser;
+      const report = ai ? await ai.clearApiKey() : { storageKeys: [], cacheEntries: 0 };
+      geminiApiKey.value = '';
+      geminiModel.value = ai ? ai.model : geminiModel.value;
+      aiAutoParseCheck.checked = true;
+      updateAiBadge();
+      updateAiKeyStatus();
+      showToast(`APIキーを削除しました（保存領域 ${report.storageKeys.length}件・キャッシュ ${report.cacheEntries}件を消去）`, 'success');
+    });
   });
 
   $('btnSaveAiSettings').addEventListener('click', () => {
     if (!window.geminiLabParser) return;
     window.geminiLabParser.saveConfig(geminiApiKey.value, geminiModel.value, aiAutoParseCheck.checked);
     updateAiBadge();
+    updateAiKeyStatus();
     closeModal('aiModal');
     showToast('AI設定を保存しました', 'success');
   });

@@ -22,6 +22,77 @@ class GeminiLabParser {
     return !!this.apiKey;
   }
 
+  /**
+   * APIキーの送信用ヘッダー（キーをURLに含めず、履歴・キャッシュ・ログに残りにくくする）
+   */
+  authHeaders(key, extra = {}) {
+    return { ...extra, 'x-goog-api-key': key };
+  }
+
+  /**
+   * 保存済みAPIキーの末尾4桁（設定画面での確認用）
+   */
+  maskedKey() {
+    return this.apiKey ? `${this.apiKey.slice(0, 4)}…${this.apiKey.slice(-4)}` : '';
+  }
+
+  /**
+   * APIキーを保存されている全ての場所から削除する
+   *   - メモリ上の設定
+   *   - LocalStorage / SessionStorage（gemini_ で始まる設定と、値がキーそのものの項目）
+   *   - Cache Storage（Gemini APIへのリクエストやキーを含むURLのキャッシュ）
+   * @returns {Promise<{storageKeys: string[], cacheEntries: number}>}
+   */
+  async clearApiKey() {
+    const storedKey = (() => {
+      try {
+        return localStorage.getItem('gemini_api_key') || '';
+      } catch {
+        return '';
+      }
+    })();
+    const keys = [this.apiKey, storedKey].filter(Boolean);
+    const storageKeys = [];
+
+    for (const [label, storage] of [['localStorage', window.localStorage], ['sessionStorage', window.sessionStorage]]) {
+      try {
+        const names = [];
+        for (let i = 0; i < storage.length; i++) names.push(storage.key(i));
+        names.forEach(name => {
+          const value = storage.getItem(name) || '';
+          // 他のデータを消さないよう、値がキーと完全一致する項目のみ（＋Gemini設定）を削除
+          if (name.startsWith('gemini_') || keys.includes(value.trim()) || keys.includes(value.replace(/^"|"$/g, ''))) {
+            storage.removeItem(name);
+            storageKeys.push(`${label}:${name}`);
+          }
+        });
+      } catch {
+        // ストレージが使えない環境では無視
+      }
+    }
+
+    let cacheEntries = 0;
+    if (typeof caches !== 'undefined') {
+      try {
+        for (const name of await caches.keys()) {
+          const cache = await caches.open(name);
+          for (const req of await cache.keys()) {
+            if (req.url.includes('generativelanguage.googleapis.com') || keys.some(k => req.url.includes(k))) {
+              if (await cache.delete(req)) cacheEntries++;
+            }
+          }
+        }
+      } catch {
+        // Cache Storage が使えない環境では無視
+      }
+    }
+
+    this.apiKey = '';
+    this.model = 'gemini-3.5-flash-lite';
+    this.autoParse = true;
+    return { storageKeys, cacheEntries };
+  }
+
   saveConfig(apiKey, model, autoParse) {
     this.apiKey = apiKey.trim();
     this.model = model || 'gemini-3.5-flash-lite';
@@ -49,7 +120,10 @@ class GeminiLabParser {
    */
   async fetchAvailableModels(key) {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        headers: this.authHeaders(key),
+        cache: 'no-store'
+      });
       if (!res.ok) return [];
       const data = await res.json();
       if (!Array.isArray(data.models)) return [];
@@ -157,10 +231,11 @@ ${rawText}
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.authHeaders(this.apiKey, { 'Content-Type': 'application/json' }),
+          cache: 'no-store',
           body: JSON.stringify(requestBody),
           signal: controller.signal
         });
@@ -241,11 +316,12 @@ ${rawText}
     let lastErr = null;
 
     for (const m of candidates) {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.authHeaders(key, { 'Content-Type': 'application/json' }),
+          cache: 'no-store',
           body: JSON.stringify({
             contents: [{ parts: [{ text: "ping: return 'ok'" }] }]
           })

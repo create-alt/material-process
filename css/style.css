@@ -2314,3 +2314,29 @@ body {
   border-radius: 4px;
   color: var(--text-main);
 }
+
+/* APIキー入力・削除 */
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.api-key-row input {
+  flex: 1;
+}
+
+.api-key-row .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.api-key-status {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.api-key-status.is-saved {
+  color: #047857;
+  font-weight: 600;
+}

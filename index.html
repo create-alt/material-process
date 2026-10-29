@@ -524,8 +524,13 @@
 
           <div class="form-group" style="margin-top: 10px;">
             <label for="geminiApiKey">Gemini API Key <span class="req">*</span></label>
-            <input type="password" id="geminiApiKey" placeholder="AIzaSy... （取得したキーを貼り付け）">
-            <span class="field-help">※キーはお使いのブラウザ（LocalStorage）にのみ保存され、Google以外のサーバーには送信されません。</span>
+            <div class="api-key-row">
+              <input type="password" id="geminiApiKey" placeholder="AIzaSy... （取得したキーを貼り付け）" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore>
+              <button id="btnDeleteApiKey" type="button" class="btn btn-sm btn-outline-danger" title="保存されているAPIキーをこのブラウザから完全に削除します">🗑️ APIキーを削除</button>
+            </div>
+            <span class="api-key-status" id="aiKeyStatus"></span>
+            <span class="field-help">※キーはお使いのブラウザ（LocalStorage）にのみ保存され、Google以外のサーバーには送信されません（URLには含めず、リクエストヘッダーで送信します）。</span>
+            <span class="field-help">※ブラウザのパスワードマネージャーにキーを保存した場合は、ブラウザの設定から別途削除してください（Webページからは削除できません）。</span>
           </div>
 
           <div class="form-row-2">
