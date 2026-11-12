@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>高専コマナビ — 大阪公立大学高専 時間割・単位ナビ</title>
+<meta name="description" content="大阪公立大学工業高等専門学校 2026年度シラバスをもとにした時間割・出席・課題・成績予測アプリ（ブラウザだけで動作）">
+<meta name="theme-color" content="#2a78d6">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M8 9h16M8 16h16M8 23h16M13 6v20M20 6v20' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="appbar" id="appbar"></header>
+  <nav class="nav" id="nav" aria-label="メインメニュー"></nav>
+  <main class="page" id="page" tabindex="-1"></main>
+</div>
+<div id="modal-root"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:24px">このアプリは JavaScript を有効にして開いてください。</p></noscript>
+<script src="js/data.js"></script>
+<script src="js/core.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/pages-timetable.js"></script>
+<script src="js/pages-study.js"></script>
+<script src="js/pages-credits.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
